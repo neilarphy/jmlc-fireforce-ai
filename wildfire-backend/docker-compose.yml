@@ -11,14 +11,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - MINIO_ENDPOINT=minio:9000
-    depends_on:
-      - postgres
-      - redis
-      - mlflow
-      - minio
+
     volumes:
       - ./app:/app/app
     restart: unless-stopped
+    networks:
+      - services_default
 
   # Celery worker
   worker:
@@ -29,71 +27,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - MINIO_ENDPOINT=minio:9000
-    depends_on:
-      - postgres
-      - redis
-      - mlflow
-      - minio
     volumes:
       - ./app:/app/app
     restart: unless-stopped
+    networks:
+      - services_default
 
-  # PostgreSQL
-  postgres:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=wildfire_db
-      - POSTGRES_USER=wildfire_user
-      - POSTGRES_PASSWORD=wildfire_pass
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-
-  # Redis
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-
-  # MLflow
-  mlflow:
-    image: python:3.11-slim
-    working_dir: /app
-    command: >
-      sh -c "pip install mlflow psycopg2-binary &&
-              mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://wildfire_user:wildfire_pass@postgres:5432/wildfire_db
-              --default-artifact-root s3://wildfire-data"
-    environment:
-      - AWS_ACCESS_KEY_ID=minioadmin
-      - AWS_SECRET_ACCESS_KEY=minioadmin
-      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
-    depends_on:
-      - postgres
-      - minio
-    ports:
-      - "5000:5000"
-    restart: unless-stopped
-
-  # MinIO
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+networks:
+  services_default:
+    external: true

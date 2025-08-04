@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", message="Field.*has conflict with protected na
 warnings.filterwarnings("ignore", message="Valid config keys have changed in V2.*")
 warnings.filterwarnings("ignore", message="error reading bcrypt version.*")
 
-from .routers import data, health
+from .routers import data, health_router
 from .routers import predictions
 from .core.config import settings
 from .core.database import init_db
@@ -56,14 +56,14 @@ app = FastAPI(
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешаем все origins
-    allow_credentials=False,  # Отключаем credentials для wildcard origins
+    allow_origins=["*"], 
+    allow_credentials=False,  
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Подключение роутеров
-app.include_router(health.router, prefix=settings.API_V1_STR)
+app.include_router(health_router, prefix=settings.API_V1_STR)
 app.include_router(data.router, prefix=settings.API_V1_STR)
 app.include_router(predictions.router)
 app.include_router(auth_router)  # Аутентификация без префикса API_V1_STR

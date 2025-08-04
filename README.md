@@ -154,23 +154,79 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ```
 cursorfire/
-├── airflow/                    # Apache Airflow DAGs
-│   ├── dags/
-│   │   ├── wildfire_historical_fire_data_dag.py
-│   │   ├── wildfire_historical_weather_data_dag.py
-│   │   └── ml_training/
-│   └── plugins/
 ├── wildfire-backend/           # FastAPI Backend
 │   ├── app/
 │   │   ├── core/              # Конфигурация и база данных
 │   │   ├── models/            # SQLAlchemy модели
 │   │   ├── routers/           # API endpoints
+│   │   ├── schemas/           # Pydantic схемы
 │   │   ├── services/          # Бизнес-логика
 │   │   └── tasks/             # Celery задачи
 │   ├── alembic/               # Миграции базы данных
-│   └── models/                # ML модели
-└── docs/                      # Документация
+│   ├── models/                # ML модели (joblib файлы)
+│   ├── requirements.txt       # Python зависимости
+│   ├── Dockerfile             # Docker образ
+│   ├── docker-compose.yml     # Backend сервисы (API + Worker)
+│   ├── run.py                 # Запуск приложения
+│   └── run_worker.py          # Запуск Celery воркера
+├── frontend/                  # Vue.js + Quasar Frontend
+│   ├── src/
+│   │   ├── components/        # Vue компоненты
+│   │   ├── pages/            # Страницы приложения
+│   │   ├── layouts/          # Макеты страниц
+│   │   ├── router/           # Vue Router конфигурация
+│   │   ├── stores/           # Pinia stores
+│   │   ├── services/         # API сервисы
+│   │   ├── utils/            # Утилиты
+│   │   ├── css/              # Стили
+│   │   └── assets/           # Статические ресурсы
+│   ├── public/               # Публичные файлы
+│   ├── package.json          # Node.js зависимости
+│   ├── quasar.config.js      # Quasar конфигурация
+│   └── Dockerfile            # Docker образ
+├── services/                  # Основные сервисы (PostgreSQL, Redis, MinIO, MLflow)
+│   ├── docker-compose.yml    # Основные сервисы
+│   └── mlflow/               # MLflow конфигурация
+├── airflow/                  # Apache Airflow DAGs
+│   ├── dags/
+│   │   ├── wildfire_historical_fire_data_dag.py
+│   │   ├── wildfire_historical_weather_data_dag.py
+│   │   ├── wildfire_ml_pipeline_dag.py
+│   │   ├── wildfire_data_pipeline_dag.py
+│   │   ├── wildfire_monitoring_dag.py
+│   │   └── test_permissions_dag.py
+│   ├── plugins/              # Airflow плагины
+│   ├── requirements.txt      # Python зависимости
+│   └── docker-compose.yml   # Airflow контейнеры
+├── oldcode/                  # Архивная версия (не используется)
+├── notebooks/                # Jupyter notebooks
+│   └── forestfire.ipynb     # Анализ и обучение моделей
+├── docker-compose.yml        # Airflow контейнеры (корень)
+├── requirements.txt          # Общие Python зависимости
+├── README.md                 # Основная документация
+├── TECHNICAL_OVERVIEW.md     # Технический обзор
+└── BUSINESS_OVERVIEW.md      # Бизнес-документация
 ```
+
+### 🐳 Docker архитектура
+
+#### 1. **services/docker-compose.yml** - Основные сервисы
+- **PostgreSQL** (порт 5433) - основная БД приложения
+- **Redis** (порт 6379) - кэш и очереди
+- **MinIO** (порты 9000, 9001) - S3-совместимое хранилище
+- **MLflow** (порт 5000) - отслеживание ML экспериментов
+
+#### 2. **wildfire-backend/docker-compose.yml** - Backend приложение
+- **API** (порт 8000) - FastAPI приложение
+- **Worker** - Celery воркер для асинхронных задач
+- Подключается к сервисам из services/
+
+#### 3. **docker-compose.yml** (корень) - Airflow
+- **Airflow Webserver** (порт 8080)
+- **Airflow Scheduler**
+- **Airflow Worker**
+- **Airflow Triggerer**
+- **Airflow PostgreSQL** - отдельная БД для Airflow
 
 ## 🔧 API Endpoints
 
