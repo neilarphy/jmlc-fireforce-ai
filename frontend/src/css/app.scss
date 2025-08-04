@@ -1,0 +1,221 @@
+// app global css in SCSS form
+
+// Import Google Fonts
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+// Global font settings
+* {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+// Dark theme variables
+body.body--dark {
+    --q-primary: #3b82f6;
+    --q-secondary: #10b981;
+    --q-accent: #8b5cf6;
+    --q-positive: #10b981;
+    --q-negative: #ef4444;
+    --q-info: #06b6d4;
+    --q-warning: #f59e0b;
+    --q-dark: #111827;
+    --q-dark-page: #0f172a;
+
+    background-color: var(--q-dark-page);
+    color: #f8fafc;
+}
+
+// Light theme enhancements
+body.body--light {
+    --q-primary: #2563eb;
+    --q-secondary: #059669;
+    --q-accent: #7c3aed;
+
+    background-color: #f8fafc;
+    color: #1e293b;
+}
+
+// Custom scrollbar
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.5);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(156, 163, 175, 0.7);
+}
+
+// Dark theme scrollbar
+body.body--dark ::-webkit-scrollbar-thumb {
+    background: rgba(75, 85, 99, 0.5);
+}
+
+body.body--dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(75, 85, 99, 0.7);
+}
+
+// Modern card styles - убираем тени, добавляем скругления
+.modern-card {
+    border-radius: 16px;
+    box-shadow: none;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: #ffffff;
+
+    &:hover {
+        transform: translateY(-2px);
+        border-color: rgba(0, 0, 0, 0.12);
+    }
+}
+
+body.body--dark .modern-card {
+    background-color: #1e293b;
+    border: 1px solid rgba(71, 85, 105, 0.3);
+    color: #f8fafc;
+
+    &:hover {
+        border-color: rgba(71, 85, 105, 0.5);
+    }
+}
+
+// Исправляем все карточки Quasar
+.q-card {
+    border-radius: 16px !important;
+    box-shadow: none !important;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+body.body--dark .q-card {
+    background-color: #1e293b !important;
+    border: 1px solid rgba(71, 85, 105, 0.3) !important;
+    color: #f8fafc !important;
+}
+
+// Исправляем текст в темной теме
+body.body--dark {
+    .q-item-label {
+        color: #f8fafc !important;
+    }
+
+    .q-item-label--caption {
+        color: #cbd5e1 !important;
+    }
+
+    .text-grey-6 {
+        color: #94a3b8 !important;
+    }
+
+    .text-grey-8 {
+        color: #64748b !important;
+    }
+
+    .q-field__control {
+        color: #f8fafc !important;
+    }
+
+    .q-field__native {
+        color: #f8fafc !important;
+    }
+}
+
+// Modern button styles
+.modern-btn {
+    border-radius: 12px;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+}
+
+// Glass effect
+.glass-effect {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+body.body--dark .glass-effect {
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(71, 85, 105, 0.3);
+}
+
+// Gradient backgrounds
+.gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.gradient-secondary {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.gradient-success {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.gradient-warning {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+// Typography improvements
+.text-gradient {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+// Animation utilities
+.fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+.slide-up {
+    animation: slideUp 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+// Responsive utilities
+@media (max-width: 768px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+@media (min-width: 769px) {
+    .show-mobile {
+        display: none !important;
+    }
+}

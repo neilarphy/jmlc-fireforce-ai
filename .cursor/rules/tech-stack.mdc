@@ -1,0 +1,145 @@
+---
+description: stack of our app
+globs:
+alwaysApply: false
+---
+# Технологический стек проекта
+
+## Backend Stack
+
+### Основные технологии
+- **Runtime**: Python 3.11+
+- **Язык**: Python (JavaScript для фронтенда)
+- **Фреймворк**: FastAPI
+- **База данных**: PostgreSQL 15+
+- **ORM**: SQLAlchemy 2.0+
+- **Кэш**: Redis
+- **Объектное хранилище**: MinIO
+- **Оркестрация воркфлоу**: Apache Airflow
+- **ML Tracking**: MLflow
+- **Data Version Control**: DVC
+
+### Дополнительные библиотеки
+- **Валидация**: Pydantic (встроено в FastAPI)
+- **Аутентификация**: FastAPI Security + JWT + passlib
+- **Миграции БД**: Alembic
+- **HTTP-клиент**: httpx или aiohttp
+- **Тестирование**: pytest + pytest-asyncio
+- **Документация**: FastAPI автогенерация (Swagger/OpenAPI)
+- **Окружение**: python-dotenv
+- **Процесс-менеджер**: Uvicorn + Gunicorn (production)
+
+### Middleware Stack
+- **CORS**: FastAPI CORSMiddleware
+- **Rate Limiting**: slowapi (Redis-based)
+- **Request Logging**: structlog + custom middleware
+- **Authentication**: Custom JWT middleware
+- **Request ID**: Custom UUID middleware
+- **Error Handling**: Custom exception handlers
+
+## Frontend Stack
+
+### Основные технологии
+- **Фреймворк**: Vue 3 + Composition API
+- **UI Framework**: Quasar Framework
+- **Язык**: JavaScript (ES2022+)
+- **Сборка**: Vite (встроен в Quasar)
+- **State Management**: Pinia
+- **HTTP-клиент**: Axios
+- **Пакетный менеджер**: npm
+
+### UI/UX
+- **Библиотека компонентов**: Quasar Components
+- **Иконки**: Quasar Icons (Material, FontAwesome и др.)
+- **Формы**: Quasar Form Components + VeeValidate
+- **Стилизация**: Quasar SCSS + CSS Variables
+- **Адаптивность**: Quasar Grid System
+
+## DevOps & Infrastructure
+
+### Контейнеризация
+- **Контейнер**: Docker
+- **Оркестрация**: Docker Compose
+- **Базовые образы**: Python slim для оптимального размера
+
+### CI/CD
+- **Pipeline**: GitHub Actions
+- **Окружения**: Test и Production (без dev)
+- **Тестирование**: Автоматическое тестирование на каждый PR
+- **Безопасность**: SAST/DAST сканирование
+- **Деплой**: Прямой деплой в production после тестов
+
+### Мониторинг (минимальный)
+- **Логи**: Структурированное логирование
+- **Health Check**: FastAPI встроенный /health endpoint
+
+## Development Tools
+
+### Backend Code Quality
+- **Linting**: ruff (заменяет flake8 + isort)
+- **Форматирование**: black (автоформатирование)
+- **Type Checking**: mypy (опционально)
+- **Pre-commit**: pre-commit hooks
+- **Сортировка импортов**: ruff (встроено)
+
+### Frontend Code Quality
+- **Linting**: ESLint для JavaScript
+- **Форматирование**: Prettier
+- **Pre-commit**: lint-staged
+- **Vue Linting**: eslint-plugin-vue
+- **No Mock Data**: Запрет хардкода данных в продакшене
+- **Real API Integration**: Обязательная работа с реальным бэкендом
+
+### Testing Strategy
+- **Backend Unit Tests**: pytest с высоким покрытием (80%+)
+- **Backend Integration Tests**: pytest + FastAPI TestClient
+- **Frontend Unit Tests**: Vitest + Vue Test Utils
+- **Database Testing**: pytest-postgresql
+
+### Development Environment
+- **Python Version**: pyenv для управления версиями
+- **Virtual Environment**: venv
+- **Package Manager**: npm для фронтенда
+- **Database**: Docker Compose для локальной разработки
+- **API Testing**: FastAPI TestClient + pytest
+
+## Security Stack
+
+### Authentication & Authorization
+- **JWT**: Access + Refresh tokens
+- **Password Hashing**: bcrypt с salt rounds 12+
+- **Rate Limiting**: express-rate-limit
+- **CORS**: Настроенный для production
+- **Helmet**: Security headers
+
+### Data Protection
+- **Шифрование**: AES-256 для sensitive data
+- **Переменные окружения**: Никогда не коммитить secrets
+- **Валидация ввода**: Всегда валидировать на backend
+- **SQL Injection**: Параметризованные запросы
+- **XSS Protection**: Content Security Policy
+
+## Performance Optimization
+
+### Backend Performance
+- **Connection Pooling**: Для базы данных
+- **Caching Strategy**: Redis для session и data cache
+- **Compression**: gzip/brotli для HTTP responses
+- **Database Indexing**: Для часто запрашиваемых полей
+- **Query Optimization**: Избегать N+1 проблем
+
+### Frontend Performance (если применимо)
+- **Code Splitting**: Lazy loading компонентов
+- **Bundle Optimization**: Tree shaking
+- **Image Optimization**: WebP формат
+- **CDN**: Для статических ресурсов
+
+## Модульная архитектура
+
+### Принципы модульности
+- Каждый модуль — отдельная папка с четкой ответственностью
+- Модули должны быть слабо связанными
+- Интерфейсы между модулями через dependency injection
+- Каждый модуль имеет свои тесты и документацию
+
+### Структура модуля (Backend)

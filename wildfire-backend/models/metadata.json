@@ -1,0 +1,34 @@
+{
+  "models": {
+    "wildfire_prediction_v1.0.0_20250803_220205.pkl": {
+      "name": "wildfire_prediction",
+      "version": "1.0.0",
+      "filename": "wildfire_prediction_v1.0.0_20250803_220205.pkl",
+      "path": "models\\wildfire_prediction_v1.0.0_20250803_220205.pkl",
+      "created_at": "2025-08-03T22:02:05.444528",
+      "metrics": {
+        "accuracy": 0.85,
+        "precision": 0.82,
+        "recall": 0.88,
+        "f1_score": 0.85
+      },
+      "features": [
+        "latitude",
+        "longitude",
+        "current_temperature",
+        "current_humidity",
+        "current_wind_speed",
+        "current_precipitation",
+        "avg_temperature_7d",
+        "avg_humidity_7d",
+        "avg_wind_speed_7d",
+        "total_precipitation_7d",
+        "temperature_trend",
+        "humidity_trend"
+      ],
+      "size_mb": 1.46
+    }
+  },
+  "current_model": "wildfire_prediction_v1.0.0_20250803_220205.pkl",
+  "last_updated": "2025-08-03T22:02:05.444528"
+}
