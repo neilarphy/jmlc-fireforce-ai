@@ -61,17 +61,7 @@ async def delete_model(model_filename: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting model: {str(e)}")
 
-@router.post("/create-demo")
-async def create_demo_model():
-    """Создать демо модель"""
-    try:
-        filename = model_storage.create_demo_model()
-        if filename:
-            return {"message": "Demo model created", "filename": filename}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create demo model")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating demo model: {str(e)}")
+
 
 @router.post("/upload")
 async def upload_model(

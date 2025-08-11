@@ -156,7 +156,7 @@ services:
 volumes:
   airflow_postgres_data:
 
-    # Использование внешней сети от services для Redis
+# Использование внешней сети от services для Redis
 networks:
   default:
     external:

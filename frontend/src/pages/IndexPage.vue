@@ -193,59 +193,62 @@ function goToPredictions() {
 
 const keyMetrics = ref([
   {
-    value: '12',
+    value: '0',
     label: 'Активные пожары',
-    change: '↑ 3 за последний час'
+    change: 'Загрузка...'
   },
   {
-    value: '28',
+    value: '0',
     label: 'Зоны высокого риска',
-    change: '↓ 2 с вчерашнего дня'
+    change: 'Загрузка...'
   },
   {
-    value: '94.2%',
+    value: '0%',
     label: 'Точность прогноза',
-    change: 'За последние 30 дней'
+    change: 'Загрузка...'
   },
   {
-    value: '15',
+    value: '0',
     label: 'Активные команды',
-    change: '98% готовности'
+    change: 'Загрузка...'
   }
 ])
 
 const fireStats = ref({
-  totalFires: 156
+  totalFires: 0
 })
+
+const rosleshoz = ref(null)
+const preferRosleshoz = ref(false)
 
 const recentEvents = ref([
   {
     id: 1,
-    type: 'fire',
-    title: 'Новый пожар обнаружен',
-    description: 'Красноярский край, площадь ~5 га',
-    time: new Date(Date.now() - 15 * 60 * 1000)
+    type: 'info',
+    title: 'Система мониторинга активна',
+    description: 'Все сервисы работают стабильно',
+    time: new Date(Date.now() - 5 * 60 * 1000)
   },
   {
     id: 2,
-    type: 'warning',
-    title: 'Повышенный риск пожара',
-    description: 'Иркутская область, высокие риски 4.5',
-    time: new Date(Date.now() - 32 * 60 * 1000)
+    type: 'info',
+    title: 'База данных обновлена',
+    description: 'Новые данные о пожарах загружены',
+    time: new Date(Date.now() - 15 * 60 * 1000)
   },
   {
     id: 3,
-    type: 'success',
-    title: 'Пожар локализован',
-    description: 'Томская область, площадь 8 га',
-    time: new Date(Date.now() - 45 * 60 * 1000)
+    type: 'info',
+    title: 'Модель прогнозирования активна',
+    description: 'Готовность к прогнозам 100%',
+    time: new Date(Date.now() - 30 * 60 * 1000)
   },
   {
     id: 4,
     type: 'info',
-    title: 'Система обновлена',
-    description: 'Точность прогнозов повышена до 94.2%',
-    time: new Date(Date.now() - 2 * 60 * 60 * 1000)
+    title: 'Система готова к работе',
+    description: 'Все компоненты инициализированы',
+    time: new Date(Date.now() - 60 * 60 * 1000)
   }
 ])
 
@@ -262,19 +265,140 @@ function formatTime(date) {
   }
 }
 
+function normalizePercent(value) {
+  const num = Number(value)
+  if (!isFinite(num)) return 0
+  return num <= 1 ? num * 100 : num
+}
+
 async function loadDashboardData() {
   try {
-    const systemStats = await ApiService.getSystemStats()
-    console.log('System stats loaded:', systemStats)
+    const dashboardStats = await ApiService.getDashboardStats()
+    console.log('Dashboard stats loaded:', dashboardStats)
+    
+    // Обновляем ключевые метрики
+    if (dashboardStats.key_metrics) {
+      // Не затираем значение Рослесхоза, если уже показано/предпочтительно
+      if (!preferRosleshoz.value) {
+        keyMetrics.value[0].value = dashboardStats.key_metrics.active_fires.toString()
+        keyMetrics.value[0].change = 'За последние 24 часа'
+      }
+      
+      const serverHR = Number(dashboardStats.key_metrics.high_risk_zones || 0)
+      const cachedHR = getCache('high_risk_cache')
+      const finalHR = Math.max(serverHR, Number(cachedHR || 0))
+      keyMetrics.value[1].value = String(finalHR)
+      keyMetrics.value[1].change = 'За последние 7 дней'
+      // обновим кэш, чтобы не мигало при следующих заходах
+      setCache('high_risk_cache', finalHR, 30 * 60 * 1000)
+      
+      const acc = normalizePercent(dashboardStats.key_metrics.prediction_accuracy)
+      keyMetrics.value[2].value = `${(Math.round(acc * 10) / 10).toFixed(1)}%`
+      keyMetrics.value[2].change = 'За последние 30 дней'
+      
+      keyMetrics.value[3].value = dashboardStats.key_metrics.active_teams.toString()
+      keyMetrics.value[3].change = 'Активные команды'
+    }
+    
+    // Обновляем статистику пожаров
+    if (dashboardStats.fire_stats) {
+      fireStats.value.totalFires = dashboardStats.fire_stats.total_fires_month
+    }
+    
   } catch (error) {
     console.error('Error loading dashboard data:', error)
+    // В случае ошибки показываем значения по умолчанию
+    keyMetrics.value[0].change = 'Ошибка загрузки'
+    keyMetrics.value[1].change = 'Ошибка загрузки'
+    keyMetrics.value[2].change = 'Ошибка загрузки'
+    keyMetrics.value[3].change = 'Ошибка загрузки'
   }
+}
+
+function getCache(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj !== 'object') return null
+    const now = Date.now()
+    if (typeof obj.ttl === 'number' && obj.ttl > now) return obj.data
+    return null
+  } catch {
+    return null
+  }
+}
+
+function setCache(key, data, ms) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, ttl: Date.now() + ms }))
+  } catch { /* ignore */ }
+}
+
+async function updateHighRiskFromHistory() {
+  try {
+    const history = await ApiService.getPredictionHistory()
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const weekCount = (history || []).filter(p => {
+      const dt = new Date(p.created_at).getTime()
+      const rp = Number(p.risk_percentage)
+      const lvl = String(p.risk_level || '')
+      return isFinite(dt) && dt >= weekAgo && (rp >= 50 || lvl === 'high' || lvl === 'critical')
+    }).length
+    // если за 7 дней ничего, считаем по всем записям как фолбэк
+    const totalCount = weekCount > 0 ? weekCount : (history || []).filter(p => {
+      const rp = Number(p.risk_percentage)
+      const lvl = String(p.risk_level || '')
+      return (rp >= 50 || lvl === 'high' || lvl === 'critical')
+    }).length
+
+    if (Number.isFinite(totalCount)) {
+      const current = parseInt(keyMetrics.value[1].value || '0', 10) || 0
+      keyMetrics.value[1].value = String(Math.max(current, totalCount))
+      keyMetrics.value[1].change = 'За последние 7 дней'
+      setCache('high_risk_cache', Math.max(current, totalCount), 30 * 60 * 1000)
+    }
+  } catch { /* ignore */ }
 }
 
 onMounted(() => {
   // Инициализируем цветовую схему
   initColorScheme();
+  // Показать кешированное значение зон высокого риска, если есть
+  const hrCached = getCache('high_risk_cache')
+  if (hrCached && Number.isFinite(Number(hrCached))) {
+    keyMetrics.value[1].value = String(hrCached)
+    keyMetrics.value[1].change = 'За последние 7 дней'
+  }
+  // Подтягиваем оперативную сводку Рослесхоза и подмешиваем активные пожары при наличии
+  const cached = getCache('rosleshoz_operative_cache')
+  if (cached && Number.isFinite(Number(cached.active_count))) {
+    rosleshoz.value = cached
+    // показываем сразу из кеша
+    const d = cached.fetched_at ? new Date(cached.fetched_at) : null
+    const dateStr = d && !isNaN(d.getTime()) ? `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}` : (cached.bulletin_date || '')
+    keyMetrics.value[0].value = String(cached.active_count)
+    keyMetrics.value[0].change = `По данным Рослесхоза на ${dateStr}`
+    preferRosleshoz.value = true
+  }
+  // Загружаем общие метрики (не перетираем активные пожары, если preferRosleshoz=true)
   loadDashboardData()
+  ApiService.getRosleshozOperative().then((data) => {
+    if (data) {
+      rosleshoz.value = data
+      setCache('rosleshoz_operative_cache', data, 30 * 60 * 1000) // 30 минут
+      if (Number.isFinite(Number(data.active_count))) {
+        const d = data.fetched_at ? new Date(data.fetched_at) : null
+        const dateStr = d && !isNaN(d.getTime()) ? `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}` : (data.bulletin_date || '')
+        keyMetrics.value[0].value = String(data.active_count)
+        keyMetrics.value[0].change = `По данным Рослесхоза на ${dateStr}`
+        preferRosleshoz.value = true
+      }
+    }
+  }).catch(() => {})
+
+  // Фронтовый фолбэк: считаем зоны высокого риска из истории предсказаний
+  updateHighRiskFromHistory()
 })
 </script>
 

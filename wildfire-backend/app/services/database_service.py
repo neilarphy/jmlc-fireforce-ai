@@ -265,4 +265,127 @@ class DatabaseService:
             return result
         except Exception as e:
             logger.error(f"Ошибка получения предсказаний высокого риска: {e}")
-            return [] 
+            return []
+    
+    def get_historical_fires(self, year: Optional[str] = None, severity: str = "all", region: str = "all", limit: int = 1000, offset: int = 0) -> List[Dict[str, Any]]:
+        """Получение исторических данных о пожарах"""
+        try:
+            db = next(get_db())
+            query = db.query(HistoricalFire)
+            
+            # Фильтр по году
+            if year and year != "all":
+                target_year = int(year)
+                query = query.filter(HistoricalFire.year == target_year)
+            
+            # Фильтр по серьезности (пока не используется, так как у нас нет поля severity)
+            # if severity != "all":
+            #     query = query.filter(HistoricalFire.severity == severity)
+            
+            # Фильтр по региону (пока не используется, так как у нас нет поля region)
+            # if region != "all":
+            #     query = query.filter(HistoricalFire.region == region)
+            
+            # Получаем данные с сортировкой по дате
+            fires = query.order_by(desc(HistoricalFire.dt)).offset(offset).limit(limit).all()
+            
+            result = []
+            for fire in fires:
+                result.append({
+                    "id": fire.id,
+                    "dt": fire.dt,
+                    "latitude": fire.latitude,
+                    "longitude": fire.longitude,
+                    "type_name": fire.type_name,
+                    "type_id": fire.type_id,
+                    "year": fire.year,
+                    "month": fire.month,
+                    "weekday": fire.weekday,
+                    "lon_cell": fire.lon_cell,
+                    "lat_cell": fire.lat_cell,
+                    "created_at": fire.created_at
+                })
+            
+            db.close()
+            return result
+        except Exception as e:
+            logger.error(f"Ошибка получения исторических данных о пожарах: {e}")
+            return []
+    
+    def get_historical_fires_count(self, year: Optional[str] = None) -> int:
+        """Получение количества исторических пожаров"""
+        try:
+            db = next(get_db())
+            query = db.query(func.count(HistoricalFire.id))
+            
+            # Фильтр по году
+            if year and year != "all":
+                target_year = int(year)
+                query = query.filter(HistoricalFire.year == target_year)
+            
+            count = query.scalar()
+            db.close()
+            return count or 0
+        except Exception as e:
+            logger.error(f"Ошибка получения количества исторических пожаров: {e}")
+            return 0
+    
+    def get_available_years(self) -> List[int]:
+        """Получение доступных лет для исторических данных"""
+        try:
+            db = next(get_db())
+            years = db.query(HistoricalFire.year).distinct().order_by(HistoricalFire.year.desc()).all()
+            db.close()
+            return [year[0] for year in years if year[0] is not None]
+        except Exception as e:
+            logger.error(f"Ошибка получения доступных лет: {e}")
+            return []
+    
+    def get_fire_statistics(self, year: Optional[str] = None) -> Dict[str, Any]:
+        """Получение статистики пожаров"""
+        try:
+            db = next(get_db())
+            query = db.query(HistoricalFire)
+            
+            # Фильтр по году
+            if year and year != "all":
+                target_year = int(year)
+                query = query.filter(HistoricalFire.year == target_year)
+            
+            # Общее количество пожаров
+            total_fires = query.count()
+            
+            # Статистика по типам пожаров
+            type_stats = db.query(
+                HistoricalFire.type_name,
+                func.count(HistoricalFire.id)
+            ).group_by(HistoricalFire.type_name).all()
+            
+            # Статистика по годам
+            year_stats = db.query(
+                HistoricalFire.year,
+                func.count(HistoricalFire.id)
+            ).group_by(HistoricalFire.year).order_by(HistoricalFire.year.desc()).all()
+            
+            # Статистика по месяцам
+            month_stats = db.query(
+                HistoricalFire.month,
+                func.count(HistoricalFire.id)
+            ).group_by(HistoricalFire.month).order_by(HistoricalFire.month).all()
+            
+            db.close()
+            
+            return {
+                "total_fires": total_fires,
+                "fires_by_type": {row[0]: row[1] for row in type_stats},
+                "fires_by_year": {row[0]: row[1] for row in year_stats},
+                "fires_by_month": {row[0]: row[1] for row in month_stats}
+            }
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики пожаров: {e}")
+            return {
+                "total_fires": 0,
+                "fires_by_type": {},
+                "fires_by_year": {},
+                "fires_by_month": {}
+            } 

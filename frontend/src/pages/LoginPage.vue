@@ -183,10 +183,10 @@ const features = [
 ]
 
 const stats = [
-  { value: '99.2%', label: 'Точность' },
+  { value: '70%+', label: 'Точность (MVP)' },
   { value: '24/7', label: 'Мониторинг' },
   { value: '< 1мин', label: 'Отклик' },
-  { value: '500+', label: 'Регионов' }
+  { value: 'Рослесхоз', label: 'Актуализация данных' }
 ]
 
 
@@ -428,13 +428,20 @@ async function handleRegister() {
 
   .q-icon {
     margin-right: 15px;
-    margin-top: 3px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+
+  div {
+    flex: 1;
   }
 
   h3 {
     font-size: 1.1rem;
     font-weight: 600;
     margin: 0 0 5px 0;
+    line-height: 1.2;
   }
 
   p {
@@ -572,6 +579,11 @@ body.body--dark .form-header {
 
   .feature-item {
     margin-bottom: 0;
+    text-align: left;
+    
+    .q-icon {
+      margin-top: 0;
+    }
   }
 }
 
@@ -586,6 +598,14 @@ body.body--dark .form-header {
 
   .features {
     grid-template-columns: 1fr;
+  }
+
+  .feature-item {
+    text-align: left;
+    
+    .q-icon {
+      margin-top: 0;
+    }
   }
 
   .stats {

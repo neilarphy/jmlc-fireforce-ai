@@ -21,6 +21,21 @@
           </q-card-section>
           <q-card-section class="card-content">
             <q-form @submit="createPrediction">
+              <!-- Селектор карты -->
+              <MapSelector
+                v-model="form"
+                button-label="Выбрать координаты на карте"
+                button-icon="map"
+                class="q-mb-md"
+                @update:modelValue="handleMapSelection"
+                @coordinates-selected="handleCoordinatesSelected"
+              />
+              
+              <!-- Или введите вручную -->
+              <div class="text-caption text-grey-6 q-mb-md text-center">
+                Или введите координаты вручную:
+              </div>
+              
               <q-input
                 v-model.number="form.latitude"
                 label="Широта"
@@ -70,20 +85,20 @@
               <q-circular-progress
                 show-value
                 font-size="16px"
-                :value="currentPrediction.risk_percentage"
+                :value="round1(currentPrediction?.risk_percentage)"
                 size="120px"
                 :color="getRiskColor(currentPrediction.risk_level)"
                 track-color="grey-3"
                 class="risk-progress"
               >
-                {{ currentPrediction.risk_percentage }}%
+                {{ formatPercent(currentPrediction?.risk_percentage) }}%
               </q-circular-progress>
             </div>
-            <div class="text-center">
+              <div class="text-center">
               <q-badge :color="getRiskColor(currentPrediction.risk_level)" class="risk-badge q-mb-md">
                 {{ getRiskLabel(currentPrediction.risk_level) }}
               </q-badge>
-              <div class="text-caption text-grey-6">Уверенность: {{ currentPrediction.confidence }}%</div>
+                <div class="text-caption text-grey-6">Уверенность: {{ formatPercent(currentPrediction?.confidence) }}%</div>
             </div>
           </q-card-section>
         </q-card>
@@ -117,19 +132,19 @@
                   <q-circular-progress
                     show-value
                     font-size="10px"
-                    :value="props.value"
+                    :value="round1(props.value)"
                     size="50px"
                     :color="getRiskColorByPercentage(props.value)"
                     track-color="grey-3"
                     class="table-progress"
                   >
-                    {{ props.value }}%
+                    {{ formatPercent(props.value) }}%
                   </q-circular-progress>
                 </q-td>
               </template>
               <template v-slot:body-cell-confidence="props">
                 <q-td :props="props">
-                  <q-badge color="blue" class="confidence-badge">{{ props.value }}%</q-badge>
+                  <q-badge color="blue" class="confidence-badge">{{ formatPercent(props.value) }}%</q-badge>
                 </q-td>
               </template>
               <template v-slot:body-cell-actions="props">
@@ -168,11 +183,11 @@
           </div>
           <div class="detail-item q-mb-md">
             <div class="text-caption text-grey-6">Риск пожара</div>
-            <div class="text-body1">{{ selectedPrediction.risk_percentage }}%</div>
+            <div class="text-body1">{{ formatPercent(selectedPrediction?.risk_percentage) }}%</div>
           </div>
           <div class="detail-item q-mb-md">
             <div class="text-caption text-grey-6">Уверенность</div>
-            <div class="text-body1">{{ selectedPrediction.confidence }}%</div>
+            <div class="text-body1">{{ formatPercent(selectedPrediction?.confidence) }}%</div>
           </div>
           <div class="detail-item q-mb-md">
             <div class="text-caption text-grey-6">Дата создания</div>
@@ -191,6 +206,7 @@
 import { ref, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
 import ApiService from 'src/services/api';
+import MapSelector from 'src/components/MapSelector.vue';
 
 const $q = useQuasar();
 
@@ -205,6 +221,19 @@ const form = ref({
 });
 
 const predictions = ref([]);
+
+function handleMapSelection(newValue) {
+  console.log('Map selection received:', newValue);
+  form.value = { ...newValue };
+  console.log('Form updated:', form.value);
+}
+
+function handleCoordinatesSelected(coordinates) {
+  console.log('Coordinates selected, starting prediction:', coordinates);
+  form.value = { ...coordinates };
+  // Автоматически запускаем прогноз
+  createPrediction();
+}
 
 const columns = [
     { name: 'id', label: 'ID', field: 'id', sortable: true, align: 'left' },
@@ -254,6 +283,7 @@ async function createPrediction() {
     try {
         loading.value = true
         
+        console.log('Form data before prediction:', form.value);
         console.log('Creating prediction with coordinates:', {
             latitude: form.value.latitude,
             longitude: form.value.longitude
@@ -349,6 +379,19 @@ function viewPredictionDetails(prediction) {
 onMounted(() => {
     loadPredictions();
 });
+
+// helpers: formatting to 1 decimal place
+function round1(v) {
+  const n = Number(v)
+  if (!isFinite(n)) return 0
+  return Math.round(n * 10) / 10
+}
+
+function formatPercent(v) {
+  const n = Number(v)
+  if (!isFinite(n)) return '0.0'
+  return (Math.round(n * 10) / 10).toFixed(1)
+}
 </script>
 
 <style lang="scss" scoped>

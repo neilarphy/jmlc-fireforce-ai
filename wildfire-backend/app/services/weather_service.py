@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 import logging
 import os
 import cdsapi
+import numpy as np
 from app.core.config import settings
 import time
 
@@ -46,9 +47,15 @@ class WeatherService:
             print(f"DEBUG: ERA5 API not available - cds_client is None")
             return self.get_current_weather(latitude, longitude)
         
-        # Используем неделю назад, если дата не указана (ERA5 имеет задержку ~6 дней)
+        # Используем 8-10 дней назад, если дата не указана (ERA5 имеет задержку ~6-7 дней)
         if date is None:
-            date = datetime.now() - timedelta(days=7)
+            date = datetime.now() - timedelta(days=8)
+        
+        # Проверяем, что дата не слишком свежая (ERA5 имеет задержку)
+        max_fresh_date = datetime.now() - timedelta(days=6)
+        if date > max_fresh_date:
+            date = max_fresh_date
+            print(f"DEBUG: Adjusted date to {date.strftime('%Y-%m-%d')} due to ERA5 delay")
         
         # Форматируем дату для ERA5 API
         date_str = date.strftime("%Y-%m-%d")
@@ -58,16 +65,24 @@ class WeatherService:
         try:
             start_time = time.time()
             
-            # Упрощенный запрос к ERA5 API
+            # Полный запрос к ERA5 API со всеми нужными переменными
             result = self.cds_client.retrieve(
                 'reanalysis-era5-single-levels',
                 {
                     'product_type': 'reanalysis',
-                    'variable': '2m_temperature',
+                    'variable': [
+                        '2m_temperature',
+                        '2m_relative_humidity', 
+                        '10m_u_component_of_wind',
+                        '10m_v_component_of_wind',
+                        'total_precipitation'
+                    ],
                     'year': date.year,
                     'month': date.month,
                     'day': date.day,
-                    'time': '12:00',
+                    'time': [
+                        '00:00', '06:00', '12:00', '18:00'
+                    ],
                     'area': [
                         latitude + 0.1, longitude - 0.1,
                         latitude - 0.1, longitude + 0.1,
@@ -83,19 +98,13 @@ class WeatherService:
             from app.routers.predictions import update_era5_stats
             update_era5_stats(True, duration)
             
-            # Парсим результат (упрощенно)
-            weather_data = {
-                "temperature": 20.0,  # Средняя температура
-                "humidity": 65.0,     # Средняя влажность
-                "pressure": 1013.25,  # Давление
-                "wind_speed": 5.0,    # Скорость ветра
-                "precipitation": 0.0,  # Осадки
-                "data_source": "era5",
-                "timestamp": date.isoformat()
-            }
-            
+            # В реальности нужно читать NetCDF файл и извлекать данные
+            # Пока что возвращаем ошибку - пусть система использует Open-Meteo
+            print(f"DEBUG: ERA5 data received with all variables, but parsing not implemented yet")
+            print(f"DEBUG: NOTE: When implementing ERA5 parsing, remember to convert temperatures from Kelvin to Celsius")
+            print(f"DEBUG: Example: temperature_celsius = temperature_kelvin - 273.15")
             logger.info(f"ERA5 weather data retrieved for {latitude}, {longitude}")
-            return weather_data
+            raise Exception("ERA5 data received with all variables but parsing not implemented yet - using Open-Meteo fallback")
             
         except Exception as e:
             duration = time.time() - start_time if 'start_time' in locals() else 0
@@ -106,12 +115,21 @@ class WeatherService:
             update_era5_stats(False, duration)
             
             logger.error(f"ERA5 API request failed: {e}")
-            # Возвращаем fallback данные
-            return self.get_current_weather(latitude, longitude)
+            
+            # Если ошибка связана с недоступностью данных, пробуем более старую дату
+            if "not available yet" in str(e) or "latest date available" in str(e):
+                print(f"DEBUG: Trying older date due to data availability")
+                older_date = date - timedelta(days=3)
+                return self.get_era5_weather(latitude, longitude, older_date)
+            
+            # Не возвращаем fallback - пусть система покажет ошибку
+            raise Exception(f"ERA5 API failed: {e}")
     
     def get_current_weather(self, latitude: float, longitude: float) -> Dict:
         """Получить текущую погоду для координат"""
         try:
+            print(f"DEBUG: Making Open-Meteo API call for {latitude}, {longitude}")
+            
             params = {
                 "latitude": latitude,
                 "longitude": longitude,
@@ -120,8 +138,12 @@ class WeatherService:
                 "timezone": "auto"
             }
             
+            start_time = time.time()
             response = requests.get(self.base_url, params=params, timeout=10)
             response.raise_for_status()
+            duration = time.time() - start_time
+            
+            print(f"DEBUG: Open-Meteo API call successful, duration: {duration:.2f}s")
             
             data = response.json()
             
@@ -136,25 +158,19 @@ class WeatherService:
                 "precipitation": current.get("precipitation"),
                 "timestamp": current.get("time"),
                 "latitude": latitude,
-                "longitude": longitude
+                "longitude": longitude,
+                "data_source": "open_meteo"
             }
             
-            logger.info(f"Weather data retrieved for {latitude}, {longitude}")
+            logger.info(f"Open-Meteo weather data retrieved for {latitude}, {longitude}")
+            print(f"DEBUG: Open-Meteo data: {weather_data}")
             return weather_data
             
         except Exception as e:
-            logger.error(f"Error getting weather data: {e}")
-            # Возвращаем дефолтные данные в случае ошибки
-            return {
-                "temperature": 20.0,
-                "humidity": 60.0,
-                "wind_speed": 5.0,
-                "wind_direction": 180.0,
-                "precipitation": 0.0,
-                "timestamp": datetime.now().isoformat(),
-                "latitude": latitude,
-                "longitude": longitude
-            }
+            logger.error(f"Error getting Open-Meteo weather data: {e}")
+            print(f"DEBUG: Open-Meteo API failed: {e}")
+            # Не возвращаем дефолтные данные - пусть система покажет ошибку
+            raise Exception(f"Failed to get weather data from Open-Meteo: {e}")
     
     def get_historical_weather(self, latitude: float, longitude: float, date: datetime) -> Dict:
         """Получить исторические погодные данные"""
@@ -210,45 +226,35 @@ class WeatherService:
     def get_weather_features(self, latitude: float, longitude: float) -> Dict:
         """Получить погодные признаки для ML модели"""
         try:
-            # Получаем текущие данные из ERA5
-            current_weather = self.get_era5_weather(latitude, longitude)
+            # Пробуем получить данные из ERA5 (8-10 дней назад)
+            try:
+                weather_data = self.get_era5_weather(latitude, longitude)
+                print(f"DEBUG: ERA5 data received successfully")
+            except Exception as era5_error:
+                print(f"DEBUG: ERA5 failed, trying Open-Meteo: {era5_error}")
+                # Если ERA5 недоступен, используем Open-Meteo
+                weather_data = self.get_current_weather(latitude, longitude)
+                
+                # Конвертируем wind_speed в wind_u и wind_v
+                wind_speed = weather_data.get("wind_speed", 5.0)
+                wind_direction = weather_data.get("wind_direction", 180.0)
+                wind_direction_rad = np.radians(wind_direction)
+                wind_u = wind_speed * np.cos(wind_direction_rad)
+                wind_v = wind_speed * np.sin(wind_direction_rad)
+                
+                weather_data["wind_u"] = wind_u
+                weather_data["wind_v"] = wind_v
             
-            # Получаем исторические данные за последние 7 дней
-            historical_data = []
-            for i in range(7):
-                date = datetime.now() - timedelta(days=i)
-                hist_weather = self.get_era5_weather(latitude, longitude, date)
-                historical_data.append(hist_weather)
-            
-            # Вычисляем средние значения за 7 дней
-            avg_temperature = sum(d.get("temperature", 20.0) for d in historical_data) / len(historical_data)
-            avg_humidity = sum(d.get("humidity", 60.0) for d in historical_data) / len(historical_data)
-            avg_wind_speed = sum(d.get("wind_speed", 5.0) for d in historical_data) / len(historical_data)
-            total_precipitation = sum(d.get("precipitation", 0.0) for d in historical_data)
-            
-            # Вычисляем тренды (упрощенно)
-            if len(historical_data) >= 2:
-                temp_trend = current_weather.get("temperature", 20.0) - historical_data[1].get("temperature", 20.0)
-                humidity_trend = current_weather.get("humidity", 60.0) - historical_data[1].get("humidity", 60.0)
-            else:
-                temp_trend = 0.0
-                humidity_trend = 0.0
-            
-            # Формируем признаки для ML модели
+            # Формируем признаки для ML модели (соответствуют DAG)
             features = {
                 "latitude": latitude,
                 "longitude": longitude,
-                "current_temperature": current_weather.get("temperature", 20.0),
-                "current_humidity": current_weather.get("humidity", 60.0),
-                "current_wind_speed": current_weather.get("wind_speed", 5.0),
-                "current_precipitation": current_weather.get("precipitation", 0.0),
-                "avg_temperature_7d": avg_temperature,
-                "avg_humidity_7d": avg_humidity,
-                "avg_wind_speed_7d": avg_wind_speed,
-                "total_precipitation_7d": total_precipitation,
-                "temperature_trend": temp_trend,
-                "humidity_trend": humidity_trend,
-                "data_source": current_weather.get("data_source", "fallback")
+                "temperature": weather_data.get("temperature", 20.0),
+                "humidity": weather_data.get("humidity", 60.0),
+                "wind_u": weather_data.get("wind_u", 0.0),
+                "wind_v": weather_data.get("wind_v", 0.0),
+                "precipitation": weather_data.get("precipitation", 0.0),
+                "data_source": weather_data.get("data_source", "open_meteo")
             }
             
             logger.info(f"Weather features prepared for {latitude}, {longitude}")
@@ -256,19 +262,6 @@ class WeatherService:
             
         except Exception as e:
             logger.error(f"Error preparing weather features: {e}")
-            # Возвращаем дефолтные признаки в случае ошибки
-            return {
-                "latitude": latitude,
-                "longitude": longitude,
-                "current_temperature": 20.0,
-                "current_humidity": 60.0,
-                "current_wind_speed": 5.0,
-                "current_precipitation": 0.0,
-                "avg_temperature_7d": 20.0,
-                "avg_humidity_7d": 60.0,
-                "avg_wind_speed_7d": 5.0,
-                "total_precipitation_7d": 0.0,
-                "temperature_trend": 0.0,
-                "humidity_trend": 0.0,
-                "data_source": "fallback"
-            } 
+            print(f"DEBUG: Weather features preparation failed: {e}")
+            # Не возвращаем дефолтные признаки - пусть система покажет ошибку
+            raise Exception(f"Failed to prepare weather features: {e}") 

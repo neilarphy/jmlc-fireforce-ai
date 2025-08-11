@@ -10,6 +10,8 @@ from ..schemas.data import (
     RecentFires, HighRiskPredictions
 )
 from ..services.database_service import DatabaseService
+from ..services.rosleshoz_service import fetch_latest_operational_info
+from ..services.region_centroids import regions_to_points
 
 router = APIRouter(prefix="/data", tags=["data"])
 
@@ -183,3 +185,15 @@ async def get_high_risk_predictions(
             status_code=500,
             detail=f"Failed to get high risk predictions: {str(e)}"
         ) 
+
+
+@router.get("/rosleshoz/operative")
+async def rosleshoz_operative():
+    """Оперативная информация Рослесхоза (прокси/парсер)."""
+    data = fetch_latest_operational_info()
+    # Не падаем 502 — отдаём фолбэк с полями и сообщением
+    if data and isinstance(data.get("regions"), list):
+        data["region_points"] = regions_to_points(data["regions"])  # add approximate points
+    else:
+        data["region_points"] = []
+    return data

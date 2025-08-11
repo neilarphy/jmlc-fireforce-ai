@@ -21,7 +21,7 @@
           </q-card-section>
           <q-card-section class="card-content">
             <div class="row items-center q-col-gutter-lg">
-              <div class="col-12 col-md-4">
+              <div class="col-12 col-md-3">
                 <q-input outlined dense v-model="searchQuery" label="Поиск по региону" clearable class="search-input"
                   @update:model-value="applyFilters">
                   <template v-slot:append>
@@ -29,12 +29,16 @@
                   </template>
                 </q-input>
               </div>
-              <div class="col-12 col-md-4">
+              <div class="col-12 col-md-3">
+                <q-select outlined dense v-model="selectedRegion" :options="regionOptions" label="Регион"
+                  @update:model-value="applyFilters" />
+              </div>
+              <div class="col-12 col-md-3">
                 <q-select outlined dense v-model="riskLevel" :options="riskLevels" label="Уровень риска"
                   @update:model-value="applyFilters" />
               </div>
-              <div class="col-12 col-md-4">
-                <q-select outlined dense v-model="timeRange" :options="timeRanges" label="Временной диапазон"
+              <div class="col-12 col-md-3">
+                <q-select outlined dense v-model="timeRange" :options="timeRanges" label="Период"
                   @update:model-value="applyFilters" />
               </div>
             </div>
@@ -108,27 +112,10 @@
             </div>
           </q-card-section>
           <q-card-section class="card-content">
-            <q-list separator class="regions-list">
-              <q-item v-for="(region, index) in topRiskRegions" :key="index" clickable @click="centerMapOn(region)"
-                class="region-item">
-                <q-item-section avatar>
-                  <q-avatar :color="getRegionColor(region.riskLevel)" text-color="white" class="region-avatar">
-                    {{ index + 1 }}
-                  </q-avatar>
-                </q-item-section>
-                <q-item-section>
-                  <q-item-label class="text-weight-medium">{{ region.name }}</q-item-label>
-                  <q-item-label caption>
-                    <span class="text-weight-medium">{{ region.activeFires }}</span> активных пожаров
-                  </q-item-label>
-                </q-item-section>
-                <q-item-section side>
-                  <q-badge :color="getRegionColor(region.riskLevel)" class="risk-badge">
-                    {{ getRiskLevelText(region.riskLevel) }}
-                  </q-badge>
-                </q-item-section>
-              </q-item>
-            </q-list>
+            <div class="text-center q-pa-md">
+              <q-icon name="info" size="48px" color="grey-6" />
+              <div class="text-grey-6 q-mt-sm">Зоны рассчитываются динамически на основе данных о пожарах</div>
+            </div>
           </q-card-section>
         </q-card>
 
@@ -186,7 +173,7 @@
 
         <q-card-section v-if="selectedFire" class="q-pt-md">
           <div class="bg-orange-8 text-white q-pa-md q-mb-md rounded-borders text-center text-weight-bold">
-            {{ getRiskLabel(selectedFire.risk_level) }}
+            {{ getRiskLabel(selectedFire.severity) }}
           </div>
 
           <div class="row q-col-gutter-md">
@@ -200,25 +187,16 @@
             </div>
           </div>
 
-          <div class="row q-col-gutter-md q-mt-md">
-            <div class="col-6">
-              <div class="text-grey-4">Температура</div>
-              <div class="text-white text-weight-medium">{{ selectedFire.temperature }}°C</div>
-            </div>
-            <div class="col-6">
-              <div class="text-grey-4">Влажность</div>
-              <div class="text-white text-weight-medium">{{ selectedFire.humidity }}%</div>
-            </div>
-          </div>
+
 
           <div class="row q-col-gutter-md q-mt-md">
             <div class="col-6">
-              <div class="text-grey-4">Статус</div>
-              <div class="text-white text-weight-medium">{{ selectedFire.status === 'active' ? 'Активный' : 'Потухший' }}</div>
+              <div class="text-grey-4">Тип события</div>
+              <div class="text-white text-weight-medium">{{ selectedFire.event_type === 'fire_started' ? 'Начало пожара' : selectedFire.event_type === 'fire_extinguished' ? 'Пожар потушен' : selectedFire.event_type }}</div>
             </div>
             <div class="col-6">
-              <div class="text-grey-4">Дата обнаружения</div>
-              <div class="text-white text-weight-medium">{{ formatDate(selectedFire.created_at) }}</div>
+              <div class="text-grey-4">Дата события</div>
+              <div class="text-white text-weight-medium">{{ formatDate(selectedFire.timestamp) }}</div>
             </div>
           </div>
 
@@ -242,12 +220,16 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useQuasar } from 'quasar';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 const $q = useQuasar();
 
 const searchQuery = ref('');
 const riskLevel = ref({ label: 'Все уровни', value: 'all' });
-const timeRange = ref({ label: 'Текущая ситуация', value: 'current' });
+const selectedRegion = ref({ label: 'Все регионы', value: 'all' });
+const timeRange = ref({ label: 'Все время', value: 'all' });
 const fireDetailsDialog = ref(false);
 const selectedFire = ref(null);
 
@@ -259,12 +241,29 @@ const riskLevels = [
   { label: 'Критический', value: 'critical' }
 ];
 
-const timeRanges = [
-  { label: 'Текущая ситуация', value: 'current' },
-  { label: 'Прогноз на 24 часа', value: '24h' },
-  { label: 'Прогноз на 3 дня', value: '3d' },
-  { label: 'Прогноз на 7 дней', value: '7d' }
+const regionOptions = [
+  { label: 'Все регионы', value: 'all' },
+  { label: 'Красноярский край', value: 'Красноярский край' },
+  { label: 'Иркутская область', value: 'Иркутская область' },
+  { label: 'Республика Саха', value: 'Республика Саха' },
+  { label: 'Хабаровский край', value: 'Хабаровский край' },
+  { label: 'Амурская область', value: 'Амурская область' },
+  { label: 'Забайкальский край', value: 'Забайкальский край' },
+  { label: 'Приморский край', value: 'Приморский край' },
+  { label: 'Республика Бурятия', value: 'Республика Бурятия' },
+  { label: 'Еврейская автономная область', value: 'Еврейская автономная область' }
 ];
+
+const timeRanges = [
+  { label: 'Все время', value: 'all' },
+  { label: 'Последние 24 часа', value: '24h' },
+  { label: 'Последние 7 дней', value: '7d' },
+  { label: 'Последние 30 дней', value: '30d' },
+  { label: 'Последние 3 месяца', value: '3m' },
+  { label: 'Последние 6 месяцев', value: '6m' },
+  { label: 'Последний год', value: '1y' }
+];
+
 
 const legendItems = [
   { label: 'Низкий риск', class: 'bg-green' },
@@ -274,7 +273,7 @@ const legendItems = [
   { label: 'Потушенный пожар', class: 'extinguished-fire' }
 ];
 
-const topRiskRegions = ref([]);
+
 const fireEvents = ref([]);
 const fireStats = ref({
   total: 0,
@@ -286,8 +285,12 @@ const fireStats = ref({
 let map = null;
 let markers = L.layerGroup();
 let regionsLayer = L.layerGroup();
-let heatLayer = null;
+// let heatLayer = null; // не используется
 let resizeObserver = null;
+let markerClusterGroup = null; // Добавляем кластеризацию
+let rosleshozLayer = null; // layer for Rosleshoz observations
+let predictionsClusterGroup = null; // кластеры предсказаний
+let predictionsRefreshTimer = null;
 
 function getRegionColor(riskLevel) {
   switch (riskLevel) {
@@ -319,11 +322,7 @@ function getRiskLabel(riskLevel) {
   }
 }
 
-function centerMapOn(region) {
-  if (map && region.coords) {
-    map.setView(region.coords, 6);
-  }
-}
+
 
 function centerMapOnCurrentLocation() {
   if (navigator.geolocation) {
@@ -376,6 +375,22 @@ function formatDate(dateString) {
   return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function formatOnlyDate(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+
+function formatPercent(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return '0.0';
+  return (Math.round(n * 10) / 10).toFixed(1);
+}
+
 function viewFireDetails() {
   fireDetailsDialog.value = false;
   $q.notify({
@@ -400,154 +415,219 @@ function getDirections() {
   }
 }
 
+// Улучшенное создание зон с адаптивным радиусом в зависимости от зума
+function createDynamicZones(fireEvents) {
+  console.log('Создаем динамические зоны на основе', fireEvents.length, 'пожаров');
+  
+  if (fireEvents.length === 0) return [];
+  
+  const currentZoom = map ? map.getZoom() : 5;
+  
+  // Адаптивный радиус зоны в зависимости от зума
+  // На низком зуме - большие зоны, на высоком - маленькие
+  let zoneRadius;
+  if (currentZoom <= 4) {
+    zoneRadius = 8; // Очень большие зоны для низкого зума
+  } else if (currentZoom <= 6) {
+    zoneRadius = 4; // Большие зоны для среднего зума
+  } else if (currentZoom <= 8) {
+    zoneRadius = 2; // Средние зоны для высокого зума
+  } else {
+    zoneRadius = 1; // Маленькие зоны для очень высокого зума
+  }
+  
+  console.log(`Текущий зум: ${currentZoom}, радиус зоны: ${zoneRadius} градусов`);
+  
+  // Используем алгоритм кластеризации для группировки близких точек
+  const zones = new Map();
+  const processedEvents = new Set();
+  
+  fireEvents.forEach(event => {
+    if (!event.latitude || !event.longitude || processedEvents.has(event.id)) return;
+    
+    // Создаем новую зону с этим событием как центром
+    const zoneId = `zone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+         const zone = {
+       id: zoneId,
+       center: [event.latitude, event.longitude],
+       fires: [event],
+       totalRisk: getRiskScore(event.severity),
+       maxSeverity: event.severity,
+       bounds: calculateZoneBounds([event.latitude, event.longitude], zoneRadius)
+     };
+    
+    zones.set(zoneId, zone);
+    processedEvents.add(event.id);
+    
+    // Ищем все события в радиусе этой зоны и добавляем их
+    fireEvents.forEach(otherEvent => {
+      if (!otherEvent.latitude || !otherEvent.longitude || processedEvents.has(otherEvent.id)) return;
+      
+      const distance = Math.sqrt(
+        Math.pow(event.latitude - otherEvent.latitude, 2) + 
+        Math.pow(event.longitude - otherEvent.longitude, 2)
+      );
+      
+             if (distance <= zoneRadius) {
+         zone.fires.push(otherEvent);
+         zone.totalRisk += getRiskScore(otherEvent.severity);
+         zone.maxSeverity = getMaxSeverity(zone.maxSeverity, otherEvent.severity);
+         processedEvents.add(otherEvent.id);
+       }
+    });
+  });
+  
+  // Преобразуем зоны в массив и рассчитываем статистику
+  const result = Array.from(zones.values()).map(zone => {
+    const avgRisk = zone.totalRisk / zone.fires.length;
+    const riskLevel = getRiskLevelFromScore(avgRisk);
+    
+    return {
+      ...zone,
+      fireCount: zone.fires.length,
+      riskLevel: riskLevel,
+      density: zone.fires.length / calculateZoneArea(zone.bounds),
+      // Создаем полигон для зоны с адаптивным радиусом
+      polygon: createZonePolygon(zone.center, zoneRadius, riskLevel)
+    };
+  });
+  
+  console.log(`Создано ${result.length} зон с адаптивным радиусом`);
+  return result;
+}
+
+// Вспомогательные функции
+function getRiskScore(severity) {
+  switch (severity) {
+    case 'low': return 1;
+    case 'medium': return 2;
+    case 'high': return 3;
+    case 'critical': return 4;
+    default: return 1;
+  }
+}
+
+function getMaxSeverity(current, newSeverity) {
+  const severityOrder = ['low', 'medium', 'high', 'critical'];
+  const currentIndex = severityOrder.indexOf(current);
+  const newIndex = severityOrder.indexOf(newSeverity);
+  return newIndex > currentIndex ? newSeverity : current;
+}
+
+function getRiskLevelFromScore(score) {
+  if (score >= 3.5) return 'critical';
+  if (score >= 2.5) return 'high';
+  if (score >= 1.5) return 'medium';
+  return 'low';
+}
+
+function calculateZoneBounds(center, radius) {
+  return {
+    north: center[0] + radius,
+    south: center[0] - radius,
+    east: center[1] + radius,
+    west: center[1] - radius
+  };
+}
+
+function calculateZoneArea(bounds) {
+  const latDiff = bounds.north - bounds.south;
+  const lonDiff = bounds.east - bounds.west;
+  return latDiff * lonDiff;
+}
+
+function createZonePolygon(center, radius, riskLevel) {
+  // Создаем круглый полигон для зоны
+  const points = [];
+  const segments = 16;
+  
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * 2 * Math.PI;
+    const lat = center[0] + radius * Math.cos(angle);
+    const lng = center[1] + radius * Math.sin(angle);
+    points.push([lat, lng]);
+  }
+  
+  return {
+    coordinates: points,
+    riskLevel: riskLevel,
+    center: center
+  };
+}
+
+// Обновленная функция добавления зон на карту
+function addDynamicZonesToMap(zones) {
+  regionsLayer.clearLayers();
+  
+  const currentZoom = map.getZoom();
+  
+  // Показываем зоны только на среднем и низком зуме (3-8)
+  if (currentZoom >= 3 && currentZoom <= 8) {
+    console.log('Добавляем', zones.length, 'динамических зон на карту');
+    
+    zones.forEach(zone => {
+      if (zone.polygon) {
+        const polygon = L.polygon(zone.polygon.coordinates, {
+          color: getRegionColor(zone.riskLevel),
+          fillColor: getRegionColor(zone.riskLevel),
+          fillOpacity: Math.min(0.3, 0.1 + (zone.fireCount * 0.02)), // Прозрачность зависит от количества пожаров
+          weight: 2,
+          interactive: true
+        });
+        
+        // Добавляем всплывающую подсказку
+        polygon.bindPopup(`
+          <div style="min-width: 200px;">
+            <h4 style="margin: 0 0 8px 0; color: ${getRegionColor(zone.riskLevel)};">
+              Зона пожаров
+            </h4>
+            <p><strong>Количество пожаров:</strong> ${zone.fireCount}</p>
+            <p><strong>Уровень риска:</strong> ${getRiskLevelText(zone.riskLevel)}</p>
+            <p><strong>Максимальная серьезность:</strong> ${getRiskLevelText(zone.maxSeverity)}</p>
+            <p><strong>Плотность:</strong> ${zone.density.toFixed(2)} пожаров/км²</p>
+          </div>
+        `);
+        
+        polygon.addTo(regionsLayer);
+      }
+    });
+  }
+}
+
+// Загружаем данные только из API
 async function loadFireEvents() {
   try {
-    // Временно используем мок-данные вместо API
-    const mockEvents = [
-      {
-        id: 1,
-        title: 'Пожар в Красноярском крае',
-        description: 'Лесной пожар в районе Красноярска',
-        latitude: 56.0184,
-        longitude: 92.8672,
-        risk_level: 'high',
-        status: 'active',
-        region: 'Красноярский край',
-        temperature: 28,
-        humidity: 45,
-        created_at: '2024-01-15T10:30:00Z'
-      },
-      {
-        id: 2,
-        title: 'Пожар в Иркутской области',
-        description: 'Критическая ситуация с пожаром',
-        latitude: 52.2864,
-        longitude: 104.3050,
-        risk_level: 'critical',
-        status: 'active',
-        region: 'Иркутская область',
-        temperature: 32,
-        humidity: 30,
-        created_at: '2024-01-15T09:15:00Z'
-      },
-      {
-        id: 3,
-        title: 'Пожар в Республике Саха',
-        description: 'Пожар в лесной зоне',
-        latitude: 66.2654,
-        longitude: 129.6755,
-        risk_level: 'medium',
-        status: 'active',
-        region: 'Республика Саха',
-        temperature: 25,
-        humidity: 60,
-        created_at: '2024-01-15T08:45:00Z'
-      },
-      {
-        id: 4,
-        title: 'Пожар в Московской области',
-        description: 'Небольшой пожар в лесу',
-        latitude: 55.7558,
-        longitude: 37.6173,
-        risk_level: 'low',
-        status: 'active',
-        region: 'Московская область',
-        temperature: 22,
-        humidity: 65,
-        created_at: '2024-01-15T07:30:00Z'
-      },
-      {
-        id: 5,
-        title: 'Потушенный пожар в Ленинградской области',
-        description: 'Пожар был потушен',
-        latitude: 59.9311,
-        longitude: 30.3609,
-        risk_level: 'medium',
-        status: 'extinguished',
-        region: 'Ленинградская область',
-        temperature: 20,
-        humidity: 70,
-        created_at: '2024-01-14T15:20:00Z'
-      }
-    ];
-
-    fireEvents.value = mockEvents;
-
-    fireStats.value = {
-      total: fireEvents.value.length,
-      active: fireEvents.value.filter(e => e.status === 'active').length,
-      critical: fireEvents.value.filter(e => e.risk_level === 'critical').length,
-      extinguished: fireEvents.value.filter(e => e.status !== 'active').length
-    };
-
-    return mockEvents;
+    const response = await fetch('http://localhost:8000/api/v1/fire-events?limit=200');
+    if (response.ok) {
+      const events = await response.json();
+      console.log('Загружено событий:', events.length);
+      return events;
+    } else {
+      console.error('Ошибка загрузки данных с API:', response.status, response.statusText);
+      throw new Error(`API error: ${response.status}`);
+    }
   } catch (error) {
     console.error('Error loading fire events:', error);
-    return [];
+    throw error;
   }
 }
 
-async function loadHighRiskRegions() {
-  try {
-    // Временно используем мок-данные вместо API
-    const mockRegions = [
-      {
-        id: 1,
-        name: 'Красноярский край',
-        risk_level: 'high',
-        active_fires: 5,
-        coords: [56.0184, 92.8672]
-      },
-      {
-        id: 2,
-        name: 'Иркутская область',
-        risk_level: 'critical',
-        active_fires: 8,
-        coords: [52.2864, 104.3050]
-      },
-      {
-        id: 3,
-        name: 'Республика Саха',
-        risk_level: 'medium',
-        active_fires: 3,
-        coords: [66.2654, 129.6755]
-      },
-      {
-        id: 4,
-        name: 'Амурская область',
-        risk_level: 'high',
-        active_fires: 4,
-        coords: [50.2904, 127.5272]
-      },
-      {
-        id: 5,
-        name: 'Хабаровский край',
-        risk_level: 'medium',
-        active_fires: 2,
-        coords: [48.4802, 135.0719]
-      }
-    ];
 
-    topRiskRegions.value = mockRegions;
-  } catch (error) {
-    console.error('Error loading high risk regions:', error);
-  }
-}
 
 function refreshMap() {
   $q.loading.show({
     message: 'Обновление данных...'
   });
 
-  Promise.all([
-    loadFireEvents(),
-    loadHighRiskRegions()
-  ]).then(([events]) => {
-    markers.clearLayers();
-    regionsLayer.clearLayers(); // Очищаем полигоны
-
+  loadFireEvents().then(events => {
+    fireEvents.value = events;
+    
+    // Создаем динамические зоны
+    const dynamicZones = createDynamicZones(events);
+    console.log('Создано динамических зон:', dynamicZones.length);
+    
     addMarkersToMap(events);
-    addRegionsToMap(topRiskRegions.value); // Добавляем полигоны
+    addDynamicZonesToMap(dynamicZones);
 
     $q.loading.hide();
     $q.notify({
@@ -555,8 +635,14 @@ function refreshMap() {
       message: 'Данные обновлены',
       icon: 'update'
     });
-  }).catch(() => {
+  }).catch(error => {
+    console.error('Error refreshing map:', error);
     $q.loading.hide();
+    $q.notify({
+      color: 'negative',
+      message: `Ошибка загрузки данных: ${error.message}`,
+      icon: 'error'
+    });
   });
 }
 
@@ -566,47 +652,121 @@ function applyFilters() {
   });
 
   const filteredEvents = [...fireEvents.value].filter(event => {
-    if (riskLevel.value.value !== 'all' && event.risk_level !== riskLevel.value.value) {
+    // Фильтр по уровню риска
+    if (riskLevel.value.value !== 'all' && event.severity !== riskLevel.value.value) {
       return false;
     }
 
+    // Фильтр по региону
+    if (selectedRegion.value.value !== 'all' && event.region !== selectedRegion.value.value) {
+      return false;
+    }
+
+    // Фильтр по поисковому запросу
     if (searchQuery.value && !event.region?.toLowerCase().includes(searchQuery.value.toLowerCase())) {
       return false;
+    }
+
+    // Фильтр по временному диапазону
+    if (timeRange.value.value !== 'all') {
+      const eventDate = new Date(event.timestamp);
+      const now = new Date();
+      const timeDiff = now - eventDate;
+      
+      let maxTimeDiff;
+      switch (timeRange.value.value) {
+        case '24h':
+          maxTimeDiff = 24 * 60 * 60 * 1000; // 24 часа
+          break;
+        case '7d':
+          maxTimeDiff = 7 * 24 * 60 * 60 * 1000; // 7 дней
+          break;
+        case '30d':
+          maxTimeDiff = 30 * 24 * 60 * 60 * 1000; // 30 дней
+          break;
+        case '3m':
+          maxTimeDiff = 3 * 30 * 24 * 60 * 60 * 1000; // 3 месяца
+          break;
+        case '6m':
+          maxTimeDiff = 6 * 30 * 24 * 60 * 60 * 1000; // 6 месяцев
+          break;
+        case '1y':
+          maxTimeDiff = 365 * 24 * 60 * 60 * 1000; // 1 год
+          break;
+        default:
+          maxTimeDiff = Infinity;
+      }
+      
+      if (timeDiff > maxTimeDiff) {
+        return false;
+      }
     }
 
     return true;
   });
 
-  markers.clearLayers();
-  regionsLayer.clearLayers(); // Очищаем полигоны при применении фильтров
-
   addMarkersToMap(filteredEvents);
-  addRegionsToMap(topRiskRegions.value); // Добавляем полигоны после фильтрации
+  addDynamicZonesToMap(createDynamicZones(filteredEvents)); // Применяем фильтры к зонам
 
   fireStats.value = {
     total: filteredEvents.length,
-    active: filteredEvents.filter(e => e.status === 'active').length,
-    critical: filteredEvents.filter(e => e.risk_level === 'critical').length,
-    extinguished: filteredEvents.filter(e => e.status !== 'active').length
+    active: filteredEvents.filter(e => e.event_type === 'fire_started').length,
+    critical: filteredEvents.filter(e => e.severity === 'critical').length,
+    extinguished: filteredEvents.filter(e => e.event_type === 'fire_extinguished').length
   };
 
   $q.loading.hide();
 }
 
 function addMarkersToMap(events) {
+  markers.clearLayers();
+  
+  // Создаем кластерную группу для лучшей производительности
+  if (markerClusterGroup) {
+    map.removeLayer(markerClusterGroup);
+  }
+  
+  markerClusterGroup = L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    disableClusteringAtZoom: 12, // Отключаем кластеризацию на высоком зуме
+    iconCreateFunction: function(cluster) {
+      const count = cluster.getChildCount();
+      let className = 'marker-cluster-small';
+      let size = 40;
+      
+      if (count > 100) {
+        className = 'marker-cluster-large';
+        size = 60;
+      } else if (count > 10) {
+        className = 'marker-cluster-medium';
+        size = 50;
+      }
+      
+      return L.divIcon({
+        html: `<div><span>${count}</span></div>`,
+        className: `marker-cluster ${className}`,
+        iconSize: L.point(size, size)
+      });
+    }
+  });
+
   events.forEach(event => {
     let color = 'green';
-    if (event.risk_level === 'medium') color = 'orange';
-    if (event.risk_level === 'high') color = 'red';
-    if (event.risk_level === 'critical') color = 'purple';
+    if (event.severity === 'medium') color = 'orange';
+    if (event.severity === 'high') color = 'red';
+    if (event.severity === 'critical') color = 'purple';
     
     // Для потушенных пожаров используем серый цвет
-    if (event.status === 'extinguished') color = 'grey';
+    if (event.event_type === 'fire_extinguished') color = 'grey';
 
     const marker = L.circleMarker([event.latitude, event.longitude], {
-      radius: event.risk_level === 'critical' ? 12 :
-        event.risk_level === 'high' ? 10 :
-          event.risk_level === 'medium' ? 8 : 6,
+      radius: event.severity === 'critical' ? 12 :
+        event.severity === 'high' ? 10 :
+          event.severity === 'medium' ? 8 : 6,
       fillColor: color,
       color: 'white',
       weight: 2,
@@ -614,8 +774,8 @@ function addMarkersToMap(events) {
       fillOpacity: 0.8,
       interactive: true,
       bubblingMouseEvents: false,
-      className: (event.risk_level === 'critical' || event.risk_level === 'high') && event.status !== 'extinguished' ? 'fire-marker' : '',
-      pane: 'markerPane' // Убеждаемся что маркеры в правильном слое
+      className: (event.severity === 'critical' || event.severity === 'high') && event.event_type !== 'fire_extinguished' ? 'fire-marker' : '',
+      pane: 'markerPane'
     });
 
     marker.on('click', () => {
@@ -634,85 +794,110 @@ function addMarkersToMap(events) {
       }
     });
 
-    markers.addLayer(marker);
+    markerClusterGroup.addLayer(marker);
   });
 
-  if (heatLayer) {
-    map.removeLayer(heatLayer);
+  map.addLayer(markerClusterGroup);
+
+  // Rosleshoz observations layer
+  if (!rosleshozLayer) {
+    rosleshozLayer = L.layerGroup().addTo(map);
   }
 
-  const heatPoints = [];
-  events.forEach(event => {
-    heatPoints.push([event.latitude, event.longitude, event.risk_level === 'critical' ? 1.0 :
-      event.risk_level === 'high' ? 0.8 :
-        event.risk_level === 'medium' ? 0.6 : 0.4]);
-
-    if (event.risk_level === 'high' || event.risk_level === 'critical') {
-      for (let i = 0; i < 5; i++) {
-        const lat = event.latitude + (Math.random() - 0.5) * 0.1;
-        const lng = event.longitude + (Math.random() - 0.5) * 0.1;
-        heatPoints.push([lat, lng, 0.3]);
-      }
-    }
-  });
-
-  markers.addTo(map);
+  // Инициализируем кластер предсказаний
+  if (!predictionsClusterGroup) {
+    predictionsClusterGroup = L.markerClusterGroup({
+      chunkedLoading: true,
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      disableClusteringAtZoom: 12
+    });
+    map.addLayer(predictionsClusterGroup);
+  }
 }
 
-function addRegionsToMap(regions) {
-  const regionPolygons = {
-    'Красноярский край': [
-      [50.0, 90.0],
-      [50.0, 100.0],
-      [60.0, 100.0],
-      [60.0, 90.0]
-    ],
-    'Иркутская область': [
-      [50.0, 100.0],
-      [50.0, 110.0],
-      [60.0, 110.0],
-      [60.0, 100.0]
-    ],
-    'Республика Саха (Якутия)': [
-      [60.0, 110.0],
-      [60.0, 130.0],
-      [70.0, 130.0],
-      [70.0, 110.0]
-    ],
-    'Забайкальский край': [
-      [50.0, 110.0],
-      [50.0, 120.0],
-      [55.0, 120.0],
-      [55.0, 110.0]
-    ],
-    'Амурская область': [
-      [50.0, 120.0],
-      [50.0, 130.0],
-      [55.0, 130.0],
-      [55.0, 120.0]
-    ]
-  };
 
-  regions.forEach(region => {
-    const coords = regionPolygons[region.name];
-    if (coords) {
-      L.polygon(coords, {
-        color: getRegionColor(region.riskLevel),
-        fillColor: getRegionColor(region.riskLevel),
-        fillOpacity: 0.1, // Уменьшаем прозрачность
-        weight: 1,
-        interactive: false // Делаем полигоны неинтерактивными
-      })
-        .addTo(regionsLayer);
+// === Предсказания (новые и старые) ===
+async function loadPredictionMarkers() {
+  try {
+    const list = await fetch('http://localhost:8000/api/v1/predictions/history?limit=500')
+      .then(r => r.ok ? r.json() : []);
+
+    // очистить прошлые
+    if (predictionsClusterGroup) {
+      predictionsClusterGroup.clearLayers();
     }
-  });
+
+    list.forEach(p => {
+      const lat = p.latitude;
+      const lng = p.longitude;
+      const level = p.risk_level;
+      let color = 'green';
+      if (level === 'medium') color = 'orange';
+      if (level === 'high') color = 'red';
+      if (level === 'critical') color = 'purple';
+
+      const marker = L.circleMarker([lat, lng], {
+        radius: level === 'critical' ? 12 : level === 'high' ? 10 : 8,
+        fillColor: color,
+        color: 'white',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
+        interactive: true,
+        bubblingMouseEvents: false,
+        className: level === 'critical' || level === 'high' ? 'fire-marker' : ''
+      });
+
+      marker.bindPopup(`
+        <div style="min-width: 200px;">
+          <h4 style="margin: 0 0 8px 0; color: ${color};">Предсказание</h4>
+          <p><strong>Дата прогноза:</strong> ${formatOnlyDate(p.created_at)}</p>
+          <p><strong>Риск:</strong> ${getRiskLabel(level)}</p>
+          <p><strong>Вероятность:</strong> ${formatPercent(p.risk_percentage)}%</p>
+          <p><strong>Уверенность:</strong> ${formatPercent(p.confidence)}%</p>
+        </div>
+      `);
+
+      predictionsClusterGroup.addLayer(marker);
+    });
+  } catch (e) {
+    console.error('Failed to load prediction markers', e);
+  }
+}
+
+
+
+// Обновляем обработчик изменения зума
+function onZoomEnd() {
+  const currentZoom = map.getZoom();
+  console.log('Zoom изменился на:', currentZoom);
+  
+  // Обновляем отображение в зависимости от зума
+  if (currentZoom >= 9) {
+    // На высоком зуме показываем только точки
+    regionsLayer.clearLayers();
+  } else if (currentZoom >= 3 && currentZoom <= 8) {
+    // На среднем зуме пересчитываем зоны с новым радиусом
+    console.log('Пересчитываем зоны для зума:', currentZoom);
+    addDynamicZonesToMap(createDynamicZones(fireEvents.value));
+  } else {
+    // На очень низком зуме очищаем зоны
+    regionsLayer.clearLayers();
+  }
+  
+  // Обновляем кластеризацию
+  if (markerClusterGroup) {
+    markerClusterGroup.refreshClusters();
+  }
 }
 
 onMounted(async () => {
   try {
     console.log('Initializing map page...');
     
-    // Небольшая задержка для правильной инициализации
     await nextTick();
     
     const mapContainer = document.getElementById('risk-map');
@@ -731,14 +916,12 @@ onMounted(async () => {
 
     console.log('Map created successfully');
 
-    // Используем те же тайлы что и на главной странице
     const baseLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
       maxZoom: 18,
       minZoom: 3
     }).addTo(map);
 
-    // Альтернативный слой на случай проблем с основным
     const fallbackLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       subdomains: 'abc',
@@ -746,7 +929,6 @@ onMounted(async () => {
       minZoom: 3
     });
 
-    // Проверяем загрузку основного слоя
     baseLayer.on('tileerror', function() {
       console.log('Основной слой недоступен, переключаемся на альтернативный');
       map.removeLayer(baseLayer);
@@ -757,28 +939,37 @@ onMounted(async () => {
 
     markers = L.layerGroup().addTo(map);
     console.log('Markers layer added');
-    regionsLayer = L.layerGroup().addTo(map); // Инициализируем слой полигонов
+    regionsLayer = L.layerGroup().addTo(map);
     console.log('Regions layer added');
 
-    // Загружаем данные с обработкой ошибок
-    try {
-      await loadHighRiskRegions();
-      console.log('Regions loaded');
-    } catch (error) {
-      console.error('Error loading regions:', error);
-    }
+    // Добавляем обработчик изменения зума
+    map.on('zoomend', onZoomEnd);
 
     try {
       const events = await loadFireEvents();
+      fireEvents.value = events;
       console.log('Fire events loaded:', events.length);
+      
+             // Обновляем статистику
+       fireStats.value = {
+         total: events.length,
+         active: events.filter(e => e.event_type === 'fire_started').length,
+         critical: events.filter(e => e.severity === 'critical').length,
+         extinguished: events.filter(e => e.event_type === 'fire_extinguished').length
+       };
+      
       addMarkersToMap(events);
-      addRegionsToMap(topRiskRegions.value); // Добавляем полигоны после маркеров
+      addDynamicZonesToMap(createDynamicZones(events)); // Загружаем зоны при инициализации
       console.log('Markers and regions added to map');
     } catch (error) {
       console.error('Error loading fire events:', error);
+      $q.notify({
+        color: 'negative',
+        message: `Ошибка загрузки данных: ${error.message}`,
+        icon: 'error'
+      });
     }
 
-    // Добавляем ResizeObserver для автоматического обновления размера
     resizeObserver = new ResizeObserver(() => {
       if (map) {
         setTimeout(() => {
@@ -790,7 +981,6 @@ onMounted(async () => {
 
     resizeObserver.observe(mapContainer);
 
-    // Обновляем размер карты
     setTimeout(() => {
       if (map) {
         map.invalidateSize();
@@ -798,6 +988,34 @@ onMounted(async () => {
         console.log('Map container size after invalidate:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight);
       }
     }, 1000);
+
+    // Первичная отрисовка предсказаний
+    await loadPredictionMarkers();
+
+    // Периодическое обновление предсказаний
+    predictionsRefreshTimer = setInterval(loadPredictionMarkers, 30000);
+
+    // Load Rosleshoz observations and refresh periodically
+    async function loadRosleshoz() {
+      try {
+        const data = await fetch('http://localhost:8000/api/v1/data/rosleshoz/operative').then(r => r.json());
+        if (rosleshozLayer) rosleshozLayer.clearLayers();
+        const pts = data.region_points || [];
+        pts.forEach(p => {
+          const m = L.circleMarker([p.latitude, p.longitude], {
+            radius: 6,
+            color: 'white',
+            weight: 1,
+            fillColor: '#00bcd4',
+            fillOpacity: 0.9
+          });
+          m.bindPopup(`<div><strong>${p.name}</strong><br/>Источник: Рослесхоз<br/>Дата: ${data.bulletin_date || ''}</div>`);
+          rosleshozLayer.addLayer(m);
+        });
+      } catch { /* ignore */ }
+    }
+    await loadRosleshoz();
+    setInterval(loadRosleshoz, 30 * 60 * 1000);
 
     console.log('Map initialization completed');
     
@@ -815,6 +1033,10 @@ onUnmounted(() => {
   if (map) {
     map.remove();
     map = null;
+  }
+  if (predictionsRefreshTimer) {
+    clearInterval(predictionsRefreshTimer);
+    predictionsRefreshTimer = null;
   }
 });
 </script>
@@ -1151,6 +1373,55 @@ body.body--dark {
     .text-h4 {
       font-size: 1.75rem;
     }
+  }
+}
+
+// Стили для кластеров маркеров
+:deep(.marker-cluster) {
+  background: rgba(37, 99, 235, 0.8);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(37, 99, 235, 1);
+    transform: scale(1.1);
+  }
+  
+  span {
+    font-size: 12px;
+    font-weight: 600;
+  }
+}
+
+:deep(.marker-cluster-small) {
+  background: rgba(34, 197, 94, 0.8);
+  
+  &:hover {
+    background: rgba(34, 197, 94, 1);
+  }
+}
+
+:deep(.marker-cluster-medium) {
+  background: rgba(245, 158, 11, 0.8);
+  
+  &:hover {
+    background: rgba(245, 158, 11, 1);
+  }
+}
+
+:deep(.marker-cluster-large) {
+  background: rgba(239, 68, 68, 0.8);
+  
+  &:hover {
+    background: rgba(239, 68, 68, 1);
   }
 }
 </style>

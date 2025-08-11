@@ -17,69 +17,109 @@ class MLService:
     def __init__(self):
         self.model_storage = ModelStorageService()
         self.model = None
+        # Признаки должны соответствовать схеме таблицы training_features + вычисляемые
         self.feature_names = [
-            "latitude", "longitude", "current_temperature", "current_humidity",
-            "current_wind_speed", "current_precipitation", "avg_temperature_7d",
-            "avg_humidity_7d", "avg_wind_speed_7d", "total_precipitation_7d",
-            "temperature_trend", "humidity_trend"
+            'latitude', 'longitude', 'temperature', 'humidity', 'wind_u', 'wind_v', 'precipitation',
+            'year', 'month', 'weekday',
+            'lat_cell', 'lon_cell',
+            'temp_humidity_ratio', 'wind_magnitude', 'weather_severity',
+            'is_summer', 'is_winter', 'is_spring', 'is_autumn'
         ]
         self.load_model()
     
     def load_model(self):
         """Загрузить ML модель"""
         try:
+            logger.info("Attempting to load ML model...")
+            print(f"DEBUG: Loading model from storage...")
+            
             # Пытаемся загрузить модель из хранилища
             self.model = self.model_storage.load_model()
             
             if self.model is None:
-                # Если модель не найдена, создаем демо модель
-                logger.info("No model found, creating demo model...")
-                self.model_storage.create_demo_model()
-                self.model = self.model_storage.load_model()
-            
-            if self.model is not None:
-                logger.info("ML model loaded successfully")
+                # Если модель не найдена, логируем ошибку
+                logger.error("No model found in storage. Please train a model first.")
+                print(f"DEBUG: Model is None after loading")
+                self.model = None
             else:
-                logger.warning("Failed to load model, using fallback logic")
+                logger.info(f"ML model loaded successfully: {type(self.model).__name__}")
+                logger.info(f"Model features: {len(self.feature_names)} expected features")
+                print(f"DEBUG: Model loaded successfully: {type(self.model).__name__}")
                 
         except Exception as e:
             logger.error(f"Error loading model: {e}")
+            print(f"DEBUG: Error loading model: {e}")
             self.model = None
     
     def prepare_features(self, weather_data: Dict) -> np.ndarray:
         """Подготовить признаки для модели"""
         try:
-            features = []
-            for feature_name in self.feature_names:
-                if feature_name in weather_data:
-                    features.append(weather_data[feature_name])
-                else:
-                    # Дефолтные значения если признак отсутствует
-                    if feature_name in ["latitude", "longitude"]:
-                        features.append(0.0)
-                    elif "temperature" in feature_name:
-                        features.append(20.0)
-                    elif "humidity" in feature_name:
-                        features.append(60.0)
-                    elif "wind" in feature_name:
-                        features.append(5.0)
-                    elif "precipitation" in feature_name:
-                        features.append(0.0)
-                    elif "trend" in feature_name:
-                        features.append(0.0)
-                    else:
-                        features.append(0.0)
+            from datetime import datetime
+            import numpy as np
+            
+            # Базовые признаки из weather_data
+            latitude = weather_data.get('latitude', 0.0)
+            longitude = weather_data.get('longitude', 0.0)
+            temperature = weather_data.get('temperature', 20.0)
+            humidity = weather_data.get('humidity', 60.0)
+            wind_u = weather_data.get('wind_u', 0.0)
+            wind_v = weather_data.get('wind_v', 0.0)
+            precipitation = weather_data.get('precipitation', 0.0)
+            
+            # КОНВЕРТАЦИЯ ТЕМПЕРАТУР ИЗ КЕЛЬВИНОВ В ЦЕЛЬСИИ
+            # Проверяем, не в Кельвинах ли температура (ERA5 возвращает Кельвины)
+            if temperature > 200 and temperature < 350:  # Диапазон Кельвинов
+                print(f"DEBUG: Converting temperature from Kelvin ({temperature:.2f}K) to Celsius")
+                temperature = temperature - 273.15
+                print(f"DEBUG: Temperature converted to {temperature:.2f}°C")
+            else:
+                print(f"DEBUG: Temperature already in Celsius: {temperature:.2f}°C")
+            
+            # Текущая дата для временных признаков
+            now = datetime.now()
+            year = now.year
+            month = now.month
+            weekday = now.weekday()
+            
+            # Географические признаки (cell как в таблице)
+            lat_cell = round(latitude, 1)  # Округление до 0.1 градуса
+            lon_cell = round(longitude, 1)
+            
+            # Погодные признаки (как в DAG)
+            temp_humidity_ratio = temperature / (humidity + 1e-6)
+            wind_magnitude = np.sqrt(wind_u**2 + wind_v**2)
+            weather_severity = temperature * wind_magnitude / (humidity + 1e-6)
+            
+            # Сезонные признаки (как в DAG)
+            is_summer = 1 if month in [6, 7, 8] else 0
+            is_winter = 1 if month in [12, 1, 2] else 0
+            is_spring = 1 if month in [3, 4, 5] else 0
+            is_autumn = 1 if month in [9, 10, 11] else 0
+            
+            # Собираем все признаки в правильном порядке
+            features = [
+                latitude, longitude, temperature, humidity, wind_u, wind_v, precipitation,
+                year, month, weekday,
+                lat_cell, lon_cell,
+                temp_humidity_ratio, wind_magnitude, weather_severity,
+                is_summer, is_winter, is_spring, is_autumn
+            ]
             
             return np.array(features).reshape(1, -1)
             
         except Exception as e:
             logger.error(f"Error preparing features: {e}")
-            # Возвращаем дефолтные признаки
-            return np.array([0.0] * len(self.feature_names)).reshape(1, -1)
+            print(f"DEBUG: Feature preparation failed: {e}")
+            # Не возвращаем дефолтные признаки - пусть система покажет ошибку
+            raise Exception(f"Failed to prepare features: {e}")
     
     def predict_with_model(self, features: np.ndarray) -> Tuple[float, float]:
         """Предсказание с использованием ML модели"""
         try:
+            # Перезагружаем модель на всякий случай
+            if self.model is None:
+                self.load_model()
+            
             if self.model is not None:
                 print(f"DEBUG: Using real ML model")
                 print(f"DEBUG: Input features shape: {features.shape}")
@@ -91,31 +131,46 @@ class MLService:
                 
                 risk_probability = prediction[1]  # Вероятность пожара
                 
-                # Вычисляем confidence на основе качества предсказания
-                # Используем расстояние до границы решения как меру уверенности
-                confidence = abs(risk_probability - 0.5) * 2  # Нормализуем к 0-1
+                # Используем максимальную вероятность как confidence
+                # Это стандартный подход в ML - чем выше max(prob), тем увереннее модель
+                model_confidence = max(prediction)
                 
-                # Добавляем базовую уверенность и вариацию
-                confidence = 0.6 + confidence * 0.3  # 0.6 - 0.9
+                # Простая проверка качества данных - проверяем дефолтные значения
+                data_quality_score = 0.0
+                total_features = len(features[0])
                 
-                # Ограничиваем confidence от 0.5 до 1.0
-                confidence = max(0.5, min(1.0, confidence))
+                for feature in features[0]:
+                    # Проверяем, что признак не дефолтный
+                    if feature != 0.0 and feature != 20.0 and feature != 60.0 and feature != 5.0:
+                        data_quality_score += 1
+                
+                data_quality_ratio = data_quality_score / total_features
+                
+                # Финальный confidence: 80% от модели + 20% от качества данных
+                confidence = model_confidence * 0.8 + data_quality_ratio * 0.2
+                
+                # Ограничиваем confidence от 0.5 до 0.95
+                confidence = max(0.5, min(0.95, confidence))
                 
                 print(f"DEBUG: Calculated risk: {risk_probability:.3f}")
-                print(f"DEBUG: Calculated confidence: {confidence:.3f}")
+                print(f"DEBUG: Model confidence (max prob): {model_confidence:.3f}")
+                print(f"DEBUG: Data quality ratio: {data_quality_ratio:.3f}")
+                print(f"DEBUG: Final confidence: {confidence:.3f}")
                 
                 logger.info(f"Model prediction: risk={risk_probability:.3f}, confidence={confidence:.3f}")
                 
                 return risk_probability, confidence
             else:
-                print(f"DEBUG: Model is None, using fallback")
-                # Fallback логика если модель не загружена
-                return self.fallback_prediction(features)
+                print(f"DEBUG: Model is None")
+                logger.error("No ML model available for prediction")
+                # Не используем fallback - пусть система покажет ошибку
+                raise Exception("No ML model available for prediction")
                 
         except Exception as e:
             logger.error(f"Error in model prediction: {e}")
             print(f"DEBUG: Model prediction error: {e}")
-            return self.fallback_prediction(features)
+            # Не используем fallback - пусть система покажет ошибку
+            raise Exception(f"Model prediction failed: {e}")
     
     def fallback_prediction(self, features: np.ndarray) -> Tuple[float, float]:
         """Fallback логика для предсказания"""

@@ -73,8 +73,9 @@ async def process_prediction(prediction_id: str, request: PredictionRequest, db:
         
         print(f"DEBUG: Weather data source: {weather_data.get('data_source', 'unknown')}")
         logger.info(f"Weather data source: {weather_data.get('data_source', 'unknown')}")
-        logger.info(f"Current temperature: {weather_data.get('current_temperature', 'N/A')}°C")
-        logger.info(f"Current humidity: {weather_data.get('current_humidity', 'N/A')}%")
+        logger.info(f"Current temperature: {weather_data.get('temperature', 'N/A')}°C")
+        logger.info(f"Current humidity: {weather_data.get('humidity', 'N/A')}%")
+        print(f"DEBUG: Weather data: {weather_data}")
         
         # Выполняем прогноз с помощью ML модели
         logger.info(f"Running ML prediction...")

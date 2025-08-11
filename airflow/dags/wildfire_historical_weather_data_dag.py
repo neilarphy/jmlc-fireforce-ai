@@ -48,46 +48,36 @@ dag = DAG(
 
 def check_existing_weather_data(**context):
     """
-    Проверяет, есть ли уже данные в raw таблицах погоды.
-    Если данные есть, пропускаем загрузку.
+    Проверяет, есть ли уже данные в финальной таблице historical_weather.
+    Если данные есть, пропускаем всю загрузку.
     """
-    logger.info("Checking for existing weather data in raw tables")
+    logger.info("Checking for existing weather data in historical_weather table")
     
     # Подключаемся к PostgreSQL
     pg_hook = PostgresHook(postgres_conn_id="wildfire_db")
     
     try:
-        # Проверяем таблицы raw данных
-        instant_table = "fireforceai.weather_data_instant"
-        accum_table = "fireforceai.weather_data_accum"
+        # Проверяем финальную таблицу historical_weather
+        historical_table = "fireforceai.historical_weather"
         
-        # Проверяем мгновенные данные
-        instant_query = f"""
+        # Проверяем данные за 2020-2021 годы
+        historical_query = f"""
         SELECT COUNT(*) as count 
-        FROM {instant_table} 
-        WHERE date >= '2020-01-01' AND date <= '2021-12-31'
+        FROM {historical_table} 
+        WHERE dt >= '2020-01-01' AND dt <= '2021-12-31'
         """
         
-        # Проверяем накопительные данные
-        accum_query = f"""
-        SELECT COUNT(*) as count 
-        FROM {accum_table} 
-        WHERE date >= '2020-01-01' AND date <= '2021-12-31'
-        """
+        historical_count = pg_hook.get_first(historical_query)[0]
         
-        instant_count = pg_hook.get_first(instant_query)[0]
-        accum_count = pg_hook.get_first(accum_query)[0]
+        logger.info(f"Found {historical_count} records in {historical_table} for 2020-2021")
         
-        logger.info(f"Found {instant_count} records in {instant_table}")
-        logger.info(f"Found {accum_count} records in {accum_table}")
-        
-        # Если есть данные за 2020-2021, пропускаем загрузку
-        if instant_count > 0 and accum_count > 0:
-            logger.info("Weather data for 2020-2021 already exists. Skipping data loading.")
+        # Если есть данные за 2020-2021 в финальной таблице, пропускаем всю загрузку
+        if historical_count > 1000:  # Минимум 1000 записей для считания данных существующими
+            logger.info("Historical weather data for 2020-2021 already exists in final table. Skipping ALL data loading tasks.")
             context['task_instance'].xcom_push(key='skip_data_loading', value=True)
-            return "SKIP"
+            return "SKIP_ALL"
         else:
-            logger.info("No weather data found for 2020-2021. Proceeding with data loading.")
+            logger.info("No historical weather data found for 2020-2021. Proceeding with data loading.")
             context['task_instance'].xcom_push(key='skip_data_loading', value=False)
             return "PROCEED"
             
@@ -107,10 +97,26 @@ def process_era5_instant_data(**context):
     Оптимизировано для прямой записи в базу чанками.
     """
     # Проверяем, нужно ли пропустить загрузку
-    skip_loading = context['task_instance'].xcom_pull(key='skip_data_loading', task_ids='check_existing_data')
+    skip_loading = context['task_instance'].xcom_pull(key='skip_data_loading', task_ids='check_existing_weather_data')
     if skip_loading:
         logger.info("Skipping ERA5 instant data processing - data already exists")
         return "SKIPPED - Data already exists"
+    
+    # Дополнительная проверка существования данных в таблице weather_data_instant
+    pg_hook = PostgresHook(postgres_conn_id="wildfire_db")
+    instant_check_query = """
+    SELECT COUNT(*) as count 
+    FROM fireforceai.weather_data_instant 
+    WHERE date >= '2020-01-01' AND date <= '2021-12-31'
+    """
+    
+    try:
+        instant_count = pg_hook.get_first(instant_check_query)[0]
+        if instant_count > 1000:
+            logger.info(f"Found {instant_count} records in weather_data_instant. Skipping instant data processing.")
+            return "SKIPPED - Instant data already exists"
+    except Exception as e:
+        logger.info(f"Table weather_data_instant might not exist yet: {e}")
     
     import pandas as pd
     import xarray as xr
@@ -320,10 +326,26 @@ def process_era5_accum_data(**context):
     Оптимизировано для прямой записи в базу чанками.
     """
     # Проверяем, нужно ли пропустить загрузку
-    skip_loading = context['task_instance'].xcom_pull(key='skip_data_loading', task_ids='check_existing_data')
+    skip_loading = context['task_instance'].xcom_pull(key='skip_data_loading', task_ids='check_existing_weather_data')
     if skip_loading:
         logger.info("Skipping ERA5 accum data processing - data already exists")
         return "SKIPPED - Data already exists"
+    
+    # Дополнительная проверка существования данных в таблице weather_data_accum
+    pg_hook = PostgresHook(postgres_conn_id="wildfire_db")
+    accum_check_query = """
+    SELECT COUNT(*) as count 
+    FROM fireforceai.weather_data_accum 
+    WHERE date >= '2020-01-01' AND date <= '2021-12-31'
+    """
+    
+    try:
+        accum_count = pg_hook.get_first(accum_check_query)[0]
+        if accum_count > 1000:
+            logger.info(f"Found {accum_count} records in weather_data_accum. Skipping accum data processing.")
+            return "SKIPPED - Accum data already exists"
+    except Exception as e:
+        logger.info(f"Table weather_data_accum might not exist yet: {e}")
     
     import pandas as pd
     import xarray as xr
@@ -508,56 +530,46 @@ process_accum = PythonOperator(
 def merge_weather_data(**context):
     """
     Объединение мгновенных и накопленных данных погоды в финальную таблицу.
-    Читает данные из базы данных и объединяет их.
+    Оптимизировано для работы с большими данными через чанковую обработку.
     """
-    import pandas as pd
-    from datetime import datetime
+    # Проверяем, нужно ли пропустить загрузку
+    skip_loading = context['task_instance'].xcom_pull(key='skip_data_loading', task_ids='check_existing_weather_data')
+    if skip_loading:
+        logger.info("Skipping weather data merging - data already exists")
+        return "SKIPPED - Data already exists"
     
-    logger.info("Merging weather data from database tables")
+    # Дополнительная проверка существования данных в обеих таблицах
+    pg_hook = PostgresHook(postgres_conn_id="wildfire_db")
+    
+    instant_check_query = """
+    SELECT COUNT(*) as count 
+    FROM fireforceai.weather_data_instant 
+    WHERE date >= '2020-01-01' AND date <= '2021-12-31'
+    """
+    
+    accum_check_query = """
+    SELECT COUNT(*) as count 
+    FROM fireforceai.weather_data_accum 
+    WHERE date >= '2020-01-01' AND date <= '2021-12-31'
+    """
     
     try:
-        # Подключаемся к базе данных
-        pg_hook = PostgresHook(postgres_conn_id="wildfire_db")
+        instant_count = pg_hook.get_first(instant_check_query)[0]
+        accum_count = pg_hook.get_first(accum_check_query)[0]
         
-        # Читаем данные из таблиц
-        instant_sql = """
-        SELECT date, latitude, longitude, temperature, wind_speed, humidity
-        FROM fireforceai.weather_data_instant
-        ORDER BY date, latitude, longitude;
-        """
-        
-        accum_sql = """
-        SELECT date, latitude, longitude, precipitation
-        FROM fireforceai.weather_data_accum
-        ORDER BY date, latitude, longitude;
-        """
-        
-        logger.info("Reading instant weather data from database...")
-        df_instant = pd.read_sql(instant_sql, pg_hook.get_conn())
-        logger.info(f"Read {len(df_instant)} instant weather records")
-        
-        logger.info("Reading accumulated weather data from database...")
-        df_accum = pd.read_sql(accum_sql, pg_hook.get_conn())
-        logger.info(f"Read {len(df_accum)} accumulated weather records")
-        
-        # Объединяем данные по дате и координатам
-        logger.info("Merging weather data...")
-        df_merged = pd.merge(
-            df_instant, 
-            df_accum, 
-            on=['date', 'latitude', 'longitude'], 
-            how='left'
-        )
-        
-        # Заполняем отсутствующие значения осадков нулями
-        df_merged['precipitation'] = df_merged['precipitation'].fillna(0)
-        
-        # Добавляем дополнительные колонки
-        df_merged['dt'] = pd.to_datetime(df_merged['date'])
-        df_merged['created_at'] = datetime.now()
-        
-        logger.info(f"Merged {len(df_merged)} weather records")
-        
+        if instant_count < 1000 or accum_count < 1000:
+            logger.warning(f"Not enough data for merging: instant={instant_count}, accum={accum_count}")
+            return "SKIPPED - Not enough data for merging"
+            
+        logger.info(f"Found sufficient data for merging: instant={instant_count}, accum={accum_count}")
+    except Exception as e:
+        logger.info(f"Tables might not exist yet: {e}")
+    
+    from datetime import datetime
+    
+    logger.info("Merging weather data from database tables using chunked processing")
+    
+    try:
         # Создаем финальную таблицу
         create_final_table_sql = """
         CREATE TABLE IF NOT EXISTS fireforceai.historical_weather (
@@ -575,15 +587,49 @@ def merge_weather_data(**context):
         """
         pg_hook.run(create_final_table_sql)
         
-        # Записываем объединенные данные в финальную таблицу
-        logger.info("Writing merged weather data to final table...")
-        records_written = 0
+        # Обрабатываем данные чанками через SQL JOIN
+        logger.info("Processing data in chunks using SQL JOIN...")
         
-        for _, row in df_merged.iterrows():
-            insert_sql = """
+        # Получаем уникальные даты для обработки чанками
+        dates_sql = """
+        SELECT DISTINCT date 
+        FROM fireforceai.weather_data_instant 
+        WHERE date >= '2020-01-01' AND date <= '2021-12-31'
+        ORDER BY date
+        """
+        
+        dates_result = pg_hook.get_records(dates_sql)
+        total_dates = len(dates_result)
+        logger.info(f"Found {total_dates} unique dates to process")
+        
+        records_written = 0
+        chunk_size = 50  # Обрабатываем по 50 дат за раз
+        
+        for i in range(0, total_dates, chunk_size):
+            chunk_dates = dates_result[i:i+chunk_size]
+            date_list = [str(row[0]) for row in chunk_dates]
+            date_condition = "','".join(date_list)
+            
+            logger.info(f"Processing chunk {i//chunk_size + 1}/{(total_dates + chunk_size - 1)//chunk_size}: dates {i+1}-{min(i+chunk_size, total_dates)}")
+            
+            # SQL для объединения данных чанком
+            merge_sql = f"""
             INSERT INTO fireforceai.historical_weather 
             (dt, latitude, longitude, temperature, wind_speed, humidity, precipitation)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            SELECT 
+                i.date::timestamp as dt,
+                i.latitude,
+                i.longitude,
+                i.temperature,
+                i.wind_speed,
+                i.humidity,
+                COALESCE(a.precipitation, 0) as precipitation
+            FROM fireforceai.weather_data_instant i
+            LEFT JOIN fireforceai.weather_data_accum a 
+                ON i.date = a.date 
+                AND i.latitude = a.latitude 
+                AND i.longitude = a.longitude
+            WHERE i.date IN ('{date_condition}')
             ON CONFLICT (dt, latitude, longitude) 
             DO UPDATE SET 
                 temperature = EXCLUDED.temperature,
@@ -591,36 +637,68 @@ def merge_weather_data(**context):
                 humidity = EXCLUDED.humidity,
                 precipitation = EXCLUDED.precipitation;
             """
-            pg_hook.run(insert_sql, parameters=(
-                row['dt'],
-                float(row['latitude']),
-                float(row['longitude']),
-                float(row['temperature']),
-                float(row['wind_speed']),
-                float(row['humidity']),
-                float(row['precipitation'])
-            ))
-            records_written += 1
+            
+            try:
+                pg_hook.run(merge_sql)
+                
+                # Получаем количество записанных записей для этого чанка
+                count_sql = f"""
+                SELECT COUNT(*) 
+                FROM fireforceai.historical_weather 
+                WHERE dt::date IN ('{date_condition}')
+                """
+                chunk_count = pg_hook.get_first(count_sql)[0]
+                records_written += chunk_count
+                
+                logger.info(f"Chunk {i//chunk_size + 1} completed: {chunk_count} records written")
+                
+            except Exception as e:
+                logger.error(f"Error processing chunk {i//chunk_size + 1}: {e}")
+                raise
         
-        logger.info(f"Written {records_written} merged weather records to final table")
+        logger.info(f"Total records written to historical_weather: {records_written}")
         
         # Статистика
-        merge_stats = {
-            'instant_records': len(df_instant),
-            'accum_records': len(df_accum),
-            'merged_records': len(df_merged),
-            'final_records': records_written,
-            'date_range': f"{df_merged['date'].min()} to {df_merged['date'].max()}",
-            'unique_locations': df_merged[['latitude', 'longitude']].drop_duplicates().shape[0]
-        }
+        stats_sql = """
+        SELECT 
+            COUNT(*) as total_records,
+            COUNT(DISTINCT dt::date) as unique_dates,
+            COUNT(DISTINCT latitude || ',' || longitude) as unique_locations,
+            MIN(dt) as min_date,
+            MAX(dt) as max_date,
+            AVG(temperature) as avg_temperature,
+            AVG(humidity) as avg_humidity,
+            AVG(wind_speed) as avg_wind_speed,
+            AVG(precipitation) as avg_precipitation
+        FROM fireforceai.historical_weather
+        """
         
-        logger.info(f"Weather data merging completed. Stats: {merge_stats}")
-        context['task_instance'].xcom_push(key='merge_weather_stats', value=merge_stats)
+        stats_result = pg_hook.get_first(stats_sql)
         
-        return f"Merged and wrote {records_written} weather records to final table"
-        
+        if stats_result:
+            total_records, unique_dates, unique_locations, min_date, max_date, avg_temp, avg_hum, avg_wind, avg_precip = stats_result
+            
+            stats = {
+                'total_records': total_records,
+                'unique_dates': unique_dates,
+                'unique_locations': unique_locations,
+                'date_range': f"{min_date} to {max_date}",
+                'avg_temperature': round(avg_temp, 2) if avg_temp else 0,
+                'avg_humidity': round(avg_hum, 2) if avg_hum else 0,
+                'avg_wind_speed': round(avg_wind, 2) if avg_wind else 0,
+                'avg_precipitation': round(avg_precip, 6) if avg_precip else 0
+            }
+            
+            logger.info(f"Weather data merge completed successfully. Stats: {stats}")
+            context['task_instance'].xcom_push(key='weather_merge_stats', value=stats)
+            
+            return f"Successfully merged {total_records} weather records"
+        else:
+            logger.warning("No statistics available after merge")
+            return "Weather data merge completed"
+            
     except Exception as e:
-        logger.error(f"Error merging weather data: {str(e)}")
+        logger.error(f"Error in weather data merge: {str(e)}")
         raise
 
 merge_and_load = PythonOperator(
@@ -636,59 +714,142 @@ merge_and_load = PythonOperator(
 def update_ml_features_with_weather(**context):
     """
     Обновление ML признаков с добавлением погодных данных.
+    Умная логика: обновляет только незаполненные поля.
     """
+    logger.info("Starting ML features update with weather data")
+    
+    # Проверяем существование данных в historical_weather
+    pg_hook = PostgresHook(postgres_conn_id="wildfire_db")
+    weather_check_query = """
+    SELECT COUNT(*) as count 
+    FROM fireforceai.historical_weather 
+    WHERE dt >= '2020-01-01' AND dt <= '2021-12-31'
+    """
+    
+    try:
+        weather_count = pg_hook.get_first(weather_check_query)[0]
+        if weather_count < 1000:
+            logger.warning(f"Not enough weather data for ML features update: {weather_count}")
+            return f"SKIPPED - Not enough weather data ({weather_count} records)"
+        logger.info(f"Found {weather_count} weather records for ML features update")
+    except Exception as e:
+        logger.error(f"Error checking weather data: {e}")
+        return f"ERROR - Cannot check weather data: {e}"
+    
     from datetime import datetime
+    
+    # Получаем статистику ДО обновления
+    logger.info("Checking current ML features status...")
+    before_stats_sql = """
+    SELECT 
+        COUNT(*) as total_samples,
+        COUNT(*) FILTER (WHERE temperature IS NOT NULL) as samples_with_temperature,
+        COUNT(*) FILTER (WHERE humidity IS NOT NULL) as samples_with_humidity,
+        COUNT(*) FILTER (WHERE wind_u IS NOT NULL) as samples_with_wind_u,
+        COUNT(*) FILTER (WHERE wind_v IS NOT NULL) as samples_with_wind_v,
+        COUNT(*) FILTER (WHERE precipitation IS NOT NULL) as samples_with_precipitation,
+        COUNT(*) FILTER (WHERE temperature IS NULL AND humidity IS NULL AND wind_u IS NULL AND wind_v IS NULL AND precipitation IS NULL) as samples_without_weather
+    FROM fireforceai.training_features
+    """
+    
+    # Инициализируем переменные значениями по умолчанию
+    temp_before = hum_before = wind_u_before = wind_v_before = precip_before = no_weather_before = 0
+    
+    before_result = pg_hook.get_first(before_stats_sql)
+    if before_result:
+        total_samples, temp_before, hum_before, wind_u_before, wind_v_before, precip_before, no_weather_before = before_result
+        logger.info(f"BEFORE UPDATE - Total: {total_samples}, Temperature: {temp_before}, Humidity: {hum_before}, Wind_U: {wind_u_before}, Wind_V: {wind_v_before}, Precipitation: {precip_before}, No Weather: {no_weather_before}")
     
     logger.info("Updating ML features with weather data")
     
-    pg_hook = PostgresHook(postgres_conn_id='wildfire_db')
-    
-    # Обновляем ML признаки с погодными данными
+    # Обновляем ML признаки с погодными данными (только для незаполненных полей)
     update_features_sql = """
     UPDATE fireforceai.training_features 
     SET 
-        avg_temperature = w.temperature,
-        avg_humidity = w.humidity,
-        avg_wind_speed = w.wind_speed,
-        total_precipitation = w.precipitation,
+        temperature = COALESCE(training_features.temperature, w.temperature),
+        humidity = COALESCE(training_features.humidity, w.humidity),
+        wind_u = COALESCE(training_features.wind_u, w.wind_speed),
+        wind_v = COALESCE(training_features.wind_v, w.wind_speed),
+        precipitation = COALESCE(training_features.precipitation, w.precipitation),
         updated_at = NOW()
-    FROM fireforceai.raw_weather_data w
+    FROM fireforceai.historical_weather w
     WHERE fireforceai.training_features.latitude = w.latitude 
     AND fireforceai.training_features.longitude = w.longitude 
-    AND fireforceai.training_features.dt = w.dt;
+    AND fireforceai.training_features.dt = w.dt::date
+    AND (
+        training_features.temperature IS NULL OR 
+        training_features.humidity IS NULL OR 
+        training_features.wind_u IS NULL OR 
+        training_features.wind_v IS NULL OR 
+        training_features.precipitation IS NULL
+    );
     """
     
-    pg_hook.run(update_features_sql)
+    try:
+        pg_hook.run(update_features_sql)
+        logger.info("Successfully updated ML features with weather data")
+    except Exception as e:
+        logger.error(f"Error updating ML features: {e}")
+        return f"ERROR - Failed to update ML features: {e}"
     
-    # Получаем статистику обновленных признаков
-    stats_sql = """
+    # Получаем статистику ПОСЛЕ обновления
+    after_stats_sql = """
     SELECT 
         COUNT(*) as total_samples,
         COUNT(*) FILTER (WHERE fire_occurred = true) as positive_samples,
-        COUNT(*) FILTER (WHERE avg_temperature IS NOT NULL) as samples_with_weather,
-        COUNT(DISTINCT cell_id) as unique_cells,
+        COUNT(*) FILTER (WHERE temperature IS NOT NULL) as samples_with_temperature,
+        COUNT(*) FILTER (WHERE humidity IS NOT NULL) as samples_with_humidity,
+        COUNT(*) FILTER (WHERE wind_u IS NOT NULL) as samples_with_wind_u,
+        COUNT(*) FILTER (WHERE wind_v IS NOT NULL) as samples_with_wind_v,
+        COUNT(*) FILTER (WHERE precipitation IS NOT NULL) as samples_with_precipitation,
+        COUNT(*) FILTER (WHERE temperature IS NULL AND humidity IS NULL AND wind_u IS NULL AND wind_v IS NULL AND precipitation IS NULL) as samples_without_weather,
+        COUNT(DISTINCT CONCAT(lat_cell::text, '_', lon_cell::text)) as unique_cells,
         COUNT(DISTINCT EXTRACT(YEAR FROM dt)) as years_covered
     FROM fireforceai.training_features
     """
     
-    result = pg_hook.get_first(stats_sql)
+    after_result = pg_hook.get_first(after_stats_sql)
     
-    if result:
-        total_samples, positive_samples, samples_with_weather, unique_cells, years_covered = result
+    if after_result:
+        total_samples, positive_samples, temp_after, hum_after, wind_u_after, wind_v_after, precip_after, no_weather_after, unique_cells, years_covered = after_result
+        
+        # Вычисляем изменения
+        temp_diff = temp_after - temp_before if before_result else 0
+        hum_diff = hum_after - hum_before if before_result else 0
+        wind_u_diff = wind_u_after - wind_u_before if before_result else 0
+        wind_v_diff = wind_v_after - wind_v_before if before_result else 0
+        precip_diff = precip_after - precip_before if before_result else 0
+        no_weather_diff = no_weather_after - no_weather_before if before_result else 0
         
         feature_stats = {
             'total_samples': total_samples,
             'positive_samples': positive_samples,
-            'samples_with_weather': samples_with_weather,
+            'samples_with_temperature': temp_after,
+            'samples_with_humidity': hum_after,
+            'samples_with_wind_u': wind_u_after,
+            'samples_with_wind_v': wind_v_after,
+            'samples_with_precipitation': precip_after,
+            'samples_without_weather': no_weather_after,
             'unique_cells': unique_cells,
             'years_covered': years_covered,
-            'weather_coverage': samples_with_weather / total_samples if total_samples > 0 else 0
+            'weather_coverage': temp_after / total_samples if total_samples > 0 else 0,
+            'precipitation_coverage': precip_after / total_samples if total_samples > 0 else 0,
+            'wind_v_coverage': wind_v_after / total_samples if total_samples > 0 else 0,
+            'updates': {
+                'temperature_added': temp_diff,
+                'humidity_added': hum_diff,
+                'wind_u_added': wind_u_diff,
+                'wind_v_added': wind_v_diff,
+                'precipitation_added': precip_diff,
+                'remaining_without_weather': no_weather_after
+            }
         }
         
+        logger.info(f"AFTER UPDATE - Total: {total_samples}, Temperature: {temp_after} (+{temp_diff}), Humidity: {hum_after} (+{hum_diff}), Wind_U: {wind_u_after} (+{wind_u_diff}), Wind_V: {wind_v_after} (+{wind_v_diff}), Precipitation: {precip_after} (+{precip_diff}), No Weather: {no_weather_after}")
         logger.info(f"ML features updated with weather data. Stats: {feature_stats}")
         context['task_instance'].xcom_push(key='updated_feature_stats', value=feature_stats)
         
-        return f"Updated {samples_with_weather} ML samples with weather data"
+        return f"Updated ML features: +{temp_diff} temp, +{hum_diff} humidity, +{wind_u_diff} wind_u, +{wind_v_diff} wind_v, +{precip_diff} precipitation. Remaining without weather: {no_weather_after}"
     else:
         logger.warning("No ML features updated")
         return "No ML features updated"
@@ -715,14 +876,14 @@ def validate_weather_data(**context):
     validation_checks = [
         {
             'name': 'weather_data_completeness',
-            'sql': 'SELECT COUNT(*) FROM fireforceai.raw_weather_data',
+            'sql': 'SELECT COUNT(*) FROM fireforceai.historical_weather',
             'min_expected': 1000,
             'description': 'Weather data completeness'
         },
         {
             'name': 'temperature_validity',
             'sql': '''
-            SELECT COUNT(*) FROM fireforceai.raw_weather_data 
+            SELECT COUNT(*) FROM fireforceai.historical_weather 
             WHERE temperature BETWEEN -50 AND 50
             ''',
             'min_expected': 1000,
@@ -731,7 +892,7 @@ def validate_weather_data(**context):
         {
             'name': 'humidity_validity',
             'sql': '''
-            SELECT COUNT(*) FROM fireforceai.raw_weather_data 
+            SELECT COUNT(*) FROM fireforceai.historical_weather 
             WHERE humidity BETWEEN 0 AND 100
             ''',
             'min_expected': 1000,
@@ -740,7 +901,7 @@ def validate_weather_data(**context):
         {
             'name': 'wind_speed_validity',
             'sql': '''
-            SELECT COUNT(*) FROM fireforceai.raw_weather_data 
+            SELECT COUNT(*) FROM fireforceai.historical_weather 
             WHERE wind_speed BETWEEN 0 AND 100
             ''',
             'min_expected': 1000,
@@ -750,7 +911,7 @@ def validate_weather_data(**context):
             'name': 'ml_features_with_weather',
             'sql': '''
             SELECT COUNT(*) FROM fireforceai.training_features 
-            WHERE avg_temperature IS NOT NULL
+            WHERE temperature IS NOT NULL
             ''',
             'min_expected': 1000,
             'description': 'ML features with weather data'

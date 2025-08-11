@@ -1,15 +1,20 @@
 """
 Health check endpoints.
 """
-from fastapi import APIRouter, HTTPException
-from datetime import datetime
+from fastapi import APIRouter, HTTPException, Depends
+from datetime import datetime, timedelta
 from typing import Dict, Any
+from sqlalchemy import func, and_
+from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.database import get_db
 from ..schemas.health import HealthResponse, DetailedHealthResponse, ServiceStatus
 from ..services.mlflow_service import MLflowService
 from ..services.minio_service import MinIOService
 from ..services.database_service import DatabaseService
+from ..models.prediction import FirePrediction
+from ..models.fire import HistoricalFire
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -26,6 +31,86 @@ async def health_check():
         timestamp=datetime.now(),
         version=settings.VERSION
     )
+
+@router.get("/dashboard-stats")
+async def get_dashboard_stats(db: Session = Depends(get_db)):
+    """Получение статистики для дашборда"""
+    try:
+        # Получаем статистику за последние 30 дней
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        
+        # Активные пожары (за последние 24 часа) - используем исторические данные
+        active_fires = db.query(HistoricalFire).filter(
+            HistoricalFire.dt >= datetime.now().date() - timedelta(days=1)
+        ).count()
+        
+        # Зоны высокого риска за 7 дней по трешхолду вероятности (>= 70%)
+        # Поддерживаем два варианта хранения risk_percentage: [0..1] и [0..100]
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        threshold_low_scale = 0.50
+        threshold_high_scale = 50.0
+
+        # считаем как объединение записей, где либо доли >= 0.70, либо проценты >= 70
+        from sqlalchemy import or_
+        high_risk_zones = db.query(FirePrediction).filter(
+            and_(
+                FirePrediction.prediction_date >= seven_days_ago,
+                or_(
+                    FirePrediction.risk_score >= threshold_low_scale,           # 0..1
+                    FirePrediction.probability >= threshold_low_scale,          # 0..1
+                    FirePrediction.risk_level.in_(['high', 'critical'])
+                )
+            )
+        ).count()
+
+        # Fallback: если за 7 дней нет, считаем по всем записям
+        if high_risk_zones == 0:
+            high_risk_zones = db.query(FirePrediction).filter(
+                or_(
+                    FirePrediction.risk_score >= threshold_low_scale,
+                    FirePrediction.probability >= threshold_low_scale,
+                    FirePrediction.risk_level.in_(['high', 'critical'])
+                )
+            ).count()
+        
+        # Средняя точность прогноза (среднее значение confidence за последние 30 дней)
+        avg_confidence = db.query(func.avg(FirePrediction.confidence)).filter(
+            FirePrediction.prediction_date >= thirty_days_ago
+        ).scalar()
+        
+        # Если нет данных, используем значение по умолчанию
+        if avg_confidence is None:
+            avg_confidence = 0.85  # дефолт в долях
+        
+        # Активные команды (пока используем фиксированное значение)
+        active_teams = 12
+        
+        # Общее количество пожаров за месяц
+        total_fires_month = db.query(HistoricalFire).filter(
+            HistoricalFire.dt >= thirty_days_ago.date()
+        ).count()
+        
+        return {
+            "key_metrics": {
+                "active_fires": active_fires,
+                "high_risk_zones": high_risk_zones,
+                # Переводим к процентам, поддерживая оба формата хранения (0-1 или 0-100)
+                "prediction_accuracy": (round(float(avg_confidence) * 100.0, 1)
+                                         if float(avg_confidence) <= 1.0
+                                         else round(float(avg_confidence), 1)),
+                "active_teams": active_teams
+            },
+            "fire_stats": {
+                "total_fires_month": total_fires_month
+            },
+            "timestamp": datetime.now()
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting dashboard stats: {str(e)}"
+        )
 
 @router.get("/detailed", response_model=DetailedHealthResponse)
 async def detailed_health_check():

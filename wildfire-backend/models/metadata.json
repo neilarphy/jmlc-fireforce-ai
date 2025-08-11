@@ -1,34 +1,50 @@
-{
+ {
   "models": {
-    "wildfire_prediction_v1.0.0_20250803_220205.pkl": {
-      "name": "wildfire_prediction",
-      "version": "1.0.0",
-      "filename": "wildfire_prediction_v1.0.0_20250803_220205.pkl",
-      "path": "models\\wildfire_prediction_v1.0.0_20250803_220205.pkl",
-      "created_at": "2025-08-03T22:02:05.444528",
-      "metrics": {
-        "accuracy": 0.85,
-        "precision": 0.82,
-        "recall": 0.88,
-        "f1_score": 0.85
-      },
-      "features": [
-        "latitude",
-        "longitude",
-        "current_temperature",
-        "current_humidity",
-        "current_wind_speed",
-        "current_precipitation",
-        "avg_temperature_7d",
-        "avg_humidity_7d",
-        "avg_wind_speed_7d",
-        "total_precipitation_7d",
-        "temperature_trend",
-        "humidity_trend"
-      ],
-      "size_mb": 1.46
+    "current_model.pkl": {
+      "name": "wildfire_model",
+      "version": "1.0",
+      "filename": "current_model.pkl",
+      "path": "N:\\Programming\\Learning\\cursorfire\\wildfire-backend\\models\\current_model.pkl",
+      "created_at": "2025-08-07T00:36:01.230135",
+      "model_type": "LGBMClassifier",
+      "size_mb": 5.39,
+      "features": [],
+      "metrics": {}
+    },
+    "wildfire_model_20250806_120853.pkl": {
+      "name": "wildfire_model",
+      "version": "1.0",
+      "filename": "wildfire_model_20250806_120853.pkl",
+      "path": "N:\\Programming\\Learning\\cursorfire\\wildfire-backend\\models\\wildfire_model_20250806_120853.pkl",
+      "created_at": "2025-08-06T17:11:13.603254",
+      "model_type": "RandomForestClassifier",
+      "size_mb": 17.35,
+      "features": [],
+      "metrics": {}
+    },
+    "wildfire_model_20250806_193413.pkl": {
+      "name": "wildfire_model",
+      "version": "1.0",
+      "filename": "wildfire_model_20250806_193413.pkl",
+      "path": "N:\\Programming\\Learning\\cursorfire\\wildfire-backend\\models\\wildfire_model_20250806_193413.pkl",
+      "created_at": "2025-08-07T00:36:01.230135",
+      "model_type": "LGBMClassifier",
+      "size_mb": 5.39,
+      "features": [],
+      "metrics": {}
+    },
+    "wildfire_model_20250807_172448.pkl": {
+      "name": "wildfire_model",
+      "version": "1.0",
+      "filename": "wildfire_model_20250807_172448.pkl",
+      "path": "N:\\Programming\\Learning\\cursorfire\\wildfire-backend\\models\\wildfire_model_20250807_172448.pkl",
+      "created_at": "2025-08-07T23:42:43.658652",
+      "model_type": "LGBMClassifier",
+      "size_mb": 4.63,
+      "features": [],
+      "metrics": {}
     }
   },
-  "current_model": "wildfire_prediction_v1.0.0_20250803_220205.pkl",
-  "last_updated": "2025-08-03T22:02:05.444528"
+  "current_model": "wildfire_model_20250807_172448.pkl",
+  "last_updated": "2025-08-07T23:43:14.123890"
 }

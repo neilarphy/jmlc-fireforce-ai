@@ -117,6 +117,113 @@
                     </q-card-section>
                 </q-card>
             </div>
+
+            <!-- Notification Settings (Mock) -->
+            <div class="col-12 col-lg-10">
+                <q-card class="settings-card">
+                    <q-card-section class="card-header">
+                        <div class="row items-center">
+                            <q-icon name="notifications" size="28px" color="orange" class="q-mr-md" />
+                            <div>
+                                <div class="text-h6 text-weight-bold">Уведомления</div>
+                                <div class="text-caption text-grey-6">Подключение Telegram и уведомления на email (мок)</div>
+                            </div>
+                        </div>
+                    </q-card-section>
+
+                    <q-card-section class="card-content">
+                        <div class="row q-col-gutter-xl">
+                            <!-- Email notifications -->
+                            <div class="col-12 col-md-6">
+                                <div class="text-subtitle2 text-weight-bold q-mb-md">Email</div>
+                                <q-list class="settings-list">
+                                    <q-item class="setting-item">
+                                        <q-item-section avatar>
+                                            <q-icon name="email" color="primary" />
+                                        </q-item-section>
+                                        <q-item-section>
+                                            <q-item-label class="text-weight-medium text-body1">Email для уведомлений</q-item-label>
+                                            <q-item-label caption class="text-caption">На этот адрес будут отправляться уведомления</q-item-label>
+                                        </q-item-section>
+                                        <q-item-section side class="full-width-input">
+                                            <q-input v-model="notificationSettings.email" type="email" outlined dense placeholder="name@example.com" />
+                                        </q-item-section>
+                                    </q-item>
+
+                                    <q-item tag="label" v-ripple class="setting-item">
+                                        <q-item-section avatar>
+                                            <q-icon name="mark_email_read" color="green" />
+                                        </q-item-section>
+                                        <q-item-section>
+                                            <q-item-label class="text-weight-medium text-body1">Включить email-уведомления</q-item-label>
+                                            <q-item-label caption class="text-caption">Получать предупреждения и отчеты на почту</q-item-label>
+                                        </q-item-section>
+                                        <q-item-section side>
+                                            <q-toggle v-model="notificationSettings.emailEnabled" color="primary" size="lg" />
+                                        </q-item-section>
+                                    </q-item>
+
+                                    <div class="row items-center q-mt-md">
+                                        <q-btn color="primary" icon="outgoing_mail" label="Отправить тестовое письмо" @click="sendTestEmail" class="q-mr-sm" />
+                                    </div>
+                                </q-list>
+                            </div>
+
+                            <!-- Telegram notifications -->
+                            <div class="col-12 col-md-6">
+                                <div class="text-subtitle2 text-weight-bold q-mb-md">Telegram</div>
+                                <q-list class="settings-list">
+                                    <q-item class="setting-item">
+                                        <q-item-section avatar>
+                                            <q-icon name="telegram" color="blue" />
+                                        </q-item-section>
+                                        <q-item-section>
+                                            <q-item-label class="text-weight-medium text-body1">Подключение Telegram</q-item-label>
+                                            <q-item-label caption class="text-caption">
+                                                {{ telegramConnection.connected ? `Подключено как @${notificationSettings.telegramUsername}` : 'Подключите аккаунт Telegram для получения уведомлений' }}
+                                            </q-item-label>
+                                        </q-item-section>
+                                        <q-item-section side>
+                                            <q-btn v-if="!telegramConnection.connected" color="primary" outline icon="link" label="Подключить" @click="startTelegramConnection" />
+                                            <q-btn v-else color="negative" outline icon="link_off" label="Отключить" @click="disconnectTelegram" />
+                                        </q-item-section>
+                                    </q-item>
+
+                                    <q-item class="setting-item">
+                                        <q-item-section avatar>
+                                            <q-icon name="person" color="purple" />
+                                        </q-item-section>
+                                        <q-item-section>
+                                            <q-item-label class="text-weight-medium text-body1">Telegram username</q-item-label>
+                                            <q-item-label caption class="text-caption">Укажите ваш @username</q-item-label>
+                                        </q-item-section>
+                                        <q-item-section side class="full-width-input">
+                                            <q-input v-model="notificationSettings.telegramUsername" :disable="!telegramConnection.connected" prefix="@" outlined dense placeholder="username" />
+                                        </q-item-section>
+                                    </q-item>
+
+                                    <q-item tag="label" v-ripple class="setting-item">
+                                        <q-item-section avatar>
+                                            <q-icon name="notifications_active" color="orange" />
+                                        </q-item-section>
+                                        <q-item-section>
+                                            <q-item-label class="text-weight-medium text-body1">Уведомления в Telegram</q-item-label>
+                                            <q-item-label caption class="text-caption">Получать предупреждения и отчеты в Telegram</q-item-label>
+                                        </q-item-section>
+                                        <q-item-section side>
+                                            <q-toggle v-model="notificationSettings.telegramEnabled" :disable="!telegramConnection.connected" color="primary" size="lg" />
+                                        </q-item-section>
+                                    </q-item>
+
+                                    <div class="row items-center q-mt-md">
+                                        <q-btn color="primary" icon="send" label="Отправить тестовое сообщение" @click="sendTestTelegram" :disable="!telegramConnection.connected" />
+                                    </div>
+                                </q-list>
+                            </div>
+                        </div>
+                    </q-card-section>
+                </q-card>
+            </div>
         </div>
 
         <!-- Save Button -->
@@ -125,6 +232,34 @@
                 <q-tooltip>Сохранить настройки</q-tooltip>
             </q-btn>
         </div>
+
+        <!-- Telegram connect dialog (Mock) -->
+        <q-dialog v-model="telegramDialog.visible">
+            <q-card style="min-width: 420px">
+                <q-card-section class="row items-center q-pb-none">
+                    <div class="text-h6">Подключение Telegram (мок)</div>
+                    <q-space />
+                    <q-btn icon="close" flat round dense v-close-popup />
+                </q-card-section>
+                <q-card-section>
+                    <div class="q-mb-md">
+                        1) Откройте Telegram и начните чат с ботом <span class="text-weight-bold">@FireForceAIBot</span> (демо).<br>
+                        2) Отправьте боту команду <span class="text-weight-bold">/start</span> и код подключения:<br>
+                    </div>
+                    <div class="bg-grey-2 text-center q-pa-md q-mb-md" style="border-radius: 12px;">
+                        <div class="text-caption text-grey-7 q-mb-xs">Код подключения</div>
+                        <div class="text-h5 text-weight-bold">{{ telegramDialog.code }}</div>
+                    </div>
+                    <div class="q-mb-md">
+                        3) После отправки кода нажмите «Подтвердить» ниже. Это демонстрация — соединение будет считаться установленным.
+                    </div>
+                </q-card-section>
+                <q-card-actions align="right">
+                    <q-btn flat label="Отмена" v-close-popup />
+                    <q-btn color="primary" label="Подтвердить" @click="confirmTelegramConnection" />
+                </q-card-actions>
+            </q-card>
+        </q-dialog>
     </q-page>
 </template>
 
@@ -143,6 +278,23 @@ const settings = ref({
     soundNotifications: true,
     language: { label: 'Русский', value: 'ru' },
     colorScheme: { label: 'Синяя', value: 'blue' }
+});
+
+// Mock notification settings state
+const notificationSettings = ref({
+    email: '',
+    emailEnabled: false,
+    telegramUsername: '',
+    telegramEnabled: false
+});
+
+const telegramConnection = ref({
+    connected: false
+});
+
+const telegramDialog = ref({
+    visible: false,
+    code: ''
 });
 
 const colorSchemeOptions = [
@@ -181,8 +333,10 @@ function saveSettings() {
         // Сохраняем настройки в localStorage
         localStorage.setItem('colorScheme', JSON.stringify(settings.value.colorScheme));
         localStorage.setItem('language', JSON.stringify(settings.value.language));
+        localStorage.setItem('notificationSettings', JSON.stringify(notificationSettings.value));
+        localStorage.setItem('telegramConnected', JSON.stringify(telegramConnection.value.connected));
         
-        // Здесь можно добавить API вызов для сохранения настроек
+        // Здесь можно добавить API вызов для сохранения настроек (мок)
         $q.notify({
             color: 'positive',
             message: 'Настройки сохранены',
@@ -196,6 +350,43 @@ function saveSettings() {
             icon: 'error'
         });
     }
+}
+
+function startTelegramConnection() {
+    // Генерируем мок-код подключения и открываем диалог
+    telegramDialog.value.code = Math.floor(100000 + Math.random() * 900000).toString();
+    telegramDialog.value.visible = true;
+}
+
+function confirmTelegramConnection() {
+    telegramConnection.value.connected = true;
+    telegramDialog.value.visible = false;
+    $q.notify({ color: 'positive', icon: 'done', message: 'Telegram подключен (мок)' });
+}
+
+function disconnectTelegram() {
+    telegramConnection.value.connected = false;
+    notificationSettings.value.telegramEnabled = false;
+    $q.notify({ color: 'warning', icon: 'link_off', message: 'Telegram отключен' });
+}
+
+function sendTestEmail() {
+    if (!notificationSettings.value.emailEnabled || !notificationSettings.value.email) {
+        $q.notify({ color: 'warning', icon: 'warning', message: 'Включите email-уведомления и укажите email' });
+        return;
+    }
+    // Мок: просто показываем уведомление
+    $q.notify({ color: 'positive', icon: 'outgoing_mail', message: `Тестовое письмо отправлено на ${notificationSettings.value.email}` });
+}
+
+function sendTestTelegram() {
+    if (!telegramConnection.value.connected || !notificationSettings.value.telegramEnabled) {
+        $q.notify({ color: 'warning', icon: 'warning', message: 'Подключите Telegram и включите уведомления' });
+        return;
+    }
+    const username = notificationSettings.value.telegramUsername ? `@${notificationSettings.value.telegramUsername}` : 'ваш Telegram';
+    // Мок: просто показываем уведомление
+    $q.notify({ color: 'positive', icon: 'send', message: `Тестовое сообщение отправлено в ${username}` });
 }
 
 onMounted(() => {
@@ -229,6 +420,31 @@ onMounted(() => {
         } catch (error) {
             console.error('Error parsing saved language:', error);
             settings.value.language = { label: 'Русский', value: 'ru' };
+        }
+    }
+
+    // Загружаем сохраненные настройки уведомлений (мок)
+    const savedNotifications = localStorage.getItem('notificationSettings');
+    if (savedNotifications) {
+        try {
+            const parsed = JSON.parse(savedNotifications);
+            notificationSettings.value = {
+                email: parsed.email || '',
+                emailEnabled: !!parsed.emailEnabled,
+                telegramUsername: parsed.telegramUsername || '',
+                telegramEnabled: !!parsed.telegramEnabled
+            };
+        } catch (error) {
+            console.error('Error parsing notification settings:', error);
+        }
+    }
+
+    const savedTelegramConnected = localStorage.getItem('telegramConnected');
+    if (savedTelegramConnected) {
+        try {
+            telegramConnection.value.connected = JSON.parse(savedTelegramConnected) === true;
+        } catch {
+            telegramConnection.value.connected = false;
         }
     }
 });
@@ -309,6 +525,10 @@ onMounted(() => {
             line-height: 1.4;
         }
     }
+}
+
+.full-width-input {
+    min-width: 280px;
 }
 
 .action-btn {

@@ -13,8 +13,8 @@ engine = create_engine(
     settings.postgres_url,
     pool_pre_ping=True,
     pool_recycle=300,
-    echo=False,  # Установить True для отладки SQL запросов
-    connect_args={"options": "-c search_path=fireforceai,public"}
+    echo=False,  
+    connect_args={"options": "-c search_path=public,fireforceai"}
 )
 
 # Создание фабрики сессий

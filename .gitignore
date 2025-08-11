@@ -8,6 +8,7 @@ TASK_PLAN.md
 # C extensions
 *.so
 *.pkl
+*.joblib
 # Distribution / packaging
 .Python
 build/

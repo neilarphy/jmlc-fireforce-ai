@@ -4,7 +4,6 @@ Event endpoints for managing fire events and timeline.
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime, timedelta
-import random
 
 from ..schemas.events import FireEvent, EventType, EventSeverity
 from ..services.database_service import DatabaseService
@@ -14,45 +13,39 @@ router = APIRouter(prefix="/fire-events", tags=["events"])
 # Инициализация сервиса
 db_service = DatabaseService()
 
-def generate_mock_events():
-    """Генерирует тестовые данные для событий пожаров"""
-    regions = ["Красноярский край", "Иркутская область", "Республика Саха", "Амурская область", "Хабаровский край"]
-    event_types = [
-        (EventType.FIRE_STARTED, "Начало пожара", EventSeverity.HIGH),
-        (EventType.FIRE_CONTAINED, "Пожар локализован", EventSeverity.MEDIUM),
-        (EventType.FIRE_EXTINGUISHED, "Пожар потушен", EventSeverity.LOW),
-        (EventType.ALERT_RAISED, "Поднят алерт", EventSeverity.CRITICAL),
-        (EventType.ALERT_RESOLVED, "Алерт снят", EventSeverity.LOW),
-        (EventType.PREDICTION_MADE, "Создан прогноз", EventSeverity.MEDIUM),
-        (EventType.WEATHER_WARNING, "Погодное предупреждение", EventSeverity.HIGH)
-    ]
+def convert_raw_fire_to_event(raw_fire) -> FireEvent:
+    """Конвертирует сырые данные о пожаре в событие для API"""
+    # Определяем тип события на основе даты
+    event_type = EventType.FIRE_STARTED
     
-    events = []
-    for i in range(1, 51):
-        event_type, title, severity = random.choice(event_types)
-        region = random.choice(regions)
-        
-        # Генерируем случайное время в последние 7 дней
-        hours_ago = random.randint(1, 168)
-        event_time = datetime.now() - timedelta(hours=hours_ago)
-        
-        event = FireEvent(
-            id=i,
-            event_type=event_type,
-            severity=severity,
-            title=f"{title} #{i}",
-            description=f"Событие {title.lower()} в регионе {region}. Требуется внимание.",
-            region=region,
-            latitude=random.uniform(50, 70) if random.choice([True, False]) else None,
-            longitude=random.uniform(80, 140) if random.choice([True, False]) else None,
-            timestamp=event_time,
-            duration_minutes=random.randint(30, 480) if event_type in [EventType.FIRE_STARTED, EventType.FIRE_CONTAINED] else None,
-            affected_area=random.uniform(0.1, 100.0) if event_type in [EventType.FIRE_STARTED, EventType.FIRE_CONTAINED] else None,
-            created_at=event_time
-        )
-        events.append(event)
+    # Определяем серьезность на основе типа пожара
+    severity_map = {
+        "forest": EventSeverity.HIGH,
+        "grass": EventSeverity.MEDIUM,
+        "brush": EventSeverity.MEDIUM,
+        "crop": EventSeverity.LOW,
+        "other": EventSeverity.LOW
+    }
     
-    return events
+    severity = severity_map.get(raw_fire.get("type_name", "").lower(), EventSeverity.MEDIUM)
+    
+    # Определяем регион (можно улучшить с геокодингом)
+    region = "Россия"  # По умолчанию
+    
+    return FireEvent(
+        id=raw_fire["id"],
+        event_type=event_type,
+        severity=severity,
+        title=f"Пожар {raw_fire['type_name']}",
+        description=f"Пожар типа {raw_fire['type_name']} в координатах {raw_fire['latitude']:.4f}, {raw_fire['longitude']:.4f}",
+        region=region,
+        latitude=raw_fire["latitude"],
+        longitude=raw_fire["longitude"],
+        timestamp=raw_fire["dt"],
+        duration_minutes=60,  # Примерная длительность
+        affected_area=1.0,  # Примерная площадь в км²
+        created_at=raw_fire["created_at"]
+    )
 
 @router.get("", response_model=List[FireEvent])
 async def get_fire_events(
@@ -64,25 +57,23 @@ async def get_fire_events(
 ):
     """Получение событий пожаров"""
     try:
-        events = generate_mock_events()
+        # Получаем реальные данные о пожарах из базы
+        raw_fires = db_service.get_fire_data(limit=limit, offset=offset)
         
-        # Фильтруем по типу события
-        if event_type:
-            events = [e for e in events if e.event_type.value == event_type]
-        
-        # Фильтруем по серьезности
-        if severity:
-            events = [e for e in events if e.severity.value == severity]
-        
-        # Фильтруем по региону
-        if region:
-            events = [e for e in events if e.region == region]
-        
-        # Сортируем по времени (новые сначала)
-        events.sort(key=lambda x: x.timestamp, reverse=True)
-        
-        # Применяем пагинацию
-        events = events[offset:offset + limit]
+        # Конвертируем в события
+        events = []
+        for raw_fire in raw_fires:
+            event = convert_raw_fire_to_event(raw_fire)
+            
+            # Применяем фильтры
+            if event_type and event.event_type.value != event_type:
+                continue
+            if severity and event.severity.value != severity:
+                continue
+            if region and region.lower() not in event.region.lower():
+                continue
+                
+            events.append(event)
         
         return events
         
@@ -98,16 +89,19 @@ async def get_recent_events(
 ):
     """Получение недавних событий"""
     try:
-        events = generate_mock_events()
+        # Получаем данные за последние N часов
+        cutoff_date = datetime.now() - timedelta(hours=hours)
         
-        # Фильтруем по времени
-        cutoff_time = datetime.now() - timedelta(hours=hours)
-        recent_events = [e for e in events if e.timestamp >= cutoff_time]
+        # Получаем все данные и фильтруем по дате
+        raw_fires = db_service.get_fire_data(limit=1000, offset=0)
         
-        # Сортируем по времени (новые сначала)
-        recent_events.sort(key=lambda x: x.timestamp, reverse=True)
+        events = []
+        for raw_fire in raw_fires:
+            if raw_fire["dt"] >= cutoff_date.date():
+                event = convert_raw_fire_to_event(raw_fire)
+                events.append(event)
         
-        return recent_events[:20]  # Ограничиваем 20 последними событиями
+        return events
         
     except Exception as e:
         raise HTTPException(
@@ -119,15 +113,16 @@ async def get_recent_events(
 async def get_critical_events():
     """Получение критических событий"""
     try:
-        events = generate_mock_events()
+        # Получаем все данные и фильтруем по серьезности
+        raw_fires = db_service.get_fire_data(limit=1000, offset=0)
         
-        # Фильтруем только критические события
-        critical_events = [e for e in events if e.severity == EventSeverity.CRITICAL]
+        events = []
+        for raw_fire in raw_fires:
+            event = convert_raw_fire_to_event(raw_fire)
+            if event.severity in [EventSeverity.HIGH, EventSeverity.CRITICAL]:
+                events.append(event)
         
-        # Сортируем по времени (новые сначала)
-        critical_events.sort(key=lambda x: x.timestamp, reverse=True)
-        
-        return critical_events[:10]  # Ограничиваем 10 критическими событиями
+        return events
         
     except Exception as e:
         raise HTTPException(
@@ -139,33 +134,35 @@ async def get_critical_events():
 async def get_events_statistics():
     """Получение статистики событий"""
     try:
-        events = generate_mock_events()
+        # Получаем все данные для статистики
+        raw_fires = db_service.get_fire_data(limit=10000, offset=0)
         
-        # Подсчитываем статистику по типам событий
+        # Подсчитываем статистику
+        total_events = len(raw_fires)
         events_by_type = {}
-        for event_type in EventType:
-            events_by_type[event_type.value] = len([e for e in events if e.event_type == event_type])
-        
-        # Подсчитываем статистику по серьезности
         events_by_severity = {}
-        for severity in EventSeverity:
-            events_by_severity[severity.value] = len([e for e in events if e.severity == severity])
         
-        # Подсчитываем статистику по регионам
-        events_by_region = {}
-        regions = set(e.region for e in events)
-        for region in regions:
-            events_by_region[region] = len([e for e in events if e.region == region])
+        for raw_fire in raw_fires:
+            event = convert_raw_fire_to_event(raw_fire)
+            
+            # Статистика по типам
+            type_name = raw_fire["type_name"]
+            events_by_type[type_name] = events_by_type.get(type_name, 0) + 1
+            
+            # Статистика по серьезности
+            severity = event.severity.value
+            events_by_severity[severity] = events_by_severity.get(severity, 0) + 1
         
         # События за последние 24 часа
-        recent_24h = len([e for e in events if e.timestamp >= datetime.now() - timedelta(hours=24)])
+        cutoff_date = datetime.now() - timedelta(hours=24)
+        events_last_24h = sum(1 for raw_fire in raw_fires if raw_fire["dt"] >= cutoff_date.date())
         
         statistics = {
-            "total_events": len(events),
-            "events_last_24h": recent_24h,
+            "total_events": total_events,
+            "events_last_24h": events_last_24h,
             "events_by_type": events_by_type,
             "events_by_severity": events_by_severity,
-            "events_by_region": events_by_region
+            "events_by_region": {"Россия": total_events}  # Пока все в России
         }
         
         return statistics

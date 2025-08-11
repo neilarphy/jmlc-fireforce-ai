@@ -1,0 +1,24 @@
+{
+  "features": [
+    "fires_last_7d",
+    "fires_last_30d",
+    "month_sin",
+    "month_cos"
+  ],
+  "best_threshold": 0.35,
+  "params": {
+    "objective": "binary",
+    "metric": [
+      "auc",
+      "aucpr"
+    ],
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 1,
+    "seed": 42,
+    "verbose": -1,
+    "class_weight": "balanced"
+  }
+}

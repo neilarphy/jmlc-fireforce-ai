@@ -61,6 +61,11 @@
                 </div>
             </div>
 
+            <!-- Historical Fire Map -->
+            <div class="col-12">
+                <HistoricalFireMap />
+            </div>
+
             <!-- Main Charts -->
             <div class="col-12 col-lg-8">
                 <q-card class="dashboard-card chart-card q-mb-lg">
@@ -238,6 +243,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useQuasar } from 'quasar';
+import HistoricalFireMap from 'src/components/HistoricalFireMap.vue';
 
 const $q = useQuasar();
 
